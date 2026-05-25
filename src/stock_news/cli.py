@@ -234,14 +234,43 @@ def analyze_pipeline(ctx: click.Context, date_str: str, no_llm: bool, provider: 
     _pipeline(date_str, no_llm, provider, ctx.obj["json_output"])
 
 
-@analyze.command("backtest")
+@analyze.group("backtest", invoke_without_command=True)
 @click.option("--date", "-d", "date_str", default="today", help="日期")
 @click.pass_context
 def analyze_backtest(ctx: click.Context, date_str: str) -> None:
     """回测推荐人胜率（需先 sn market init）."""
+    if ctx.invoked_subcommand is not None:
+        return
     from stock_news.commands.backtest import run_backtest
 
     run_backtest(date_str, ctx.obj["json_output"])
+
+
+@analyze_backtest.command("refresh")
+@click.option(
+    "--as-of",
+    "as_of_str",
+    default="today",
+    show_default=True,
+    help="刷新到哪一天",
+)
+@click.option(
+    "--window-days",
+    type=click.IntRange(min=1),
+    default=30,
+    show_default=True,
+    help="扫描最近 N 天推荐",
+)
+@click.pass_context
+def analyze_backtest_refresh(
+    ctx: click.Context,
+    as_of_str: str,
+    window_days: int,
+) -> None:
+    """刷新已成熟的 T+N 回测窗口."""
+    from stock_news.commands.backtest import run_backtest_refresh
+
+    run_backtest_refresh(as_of_str, window_days, ctx.obj["json_output"])
 
 
 @analyze.command("backtest-summary")

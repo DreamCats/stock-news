@@ -91,6 +91,7 @@ sn analyze show --date today               # 查看分析摘要
 sn analyze report --date today             # 生成 HTML 报告（含 LLM 摘要 + 逻辑归纳）
 sn analyze report --date today -o ~/report.html  # 指定输出路径
 sn analyze backtest --date today           # 回测单日推荐表现
+sn analyze backtest refresh --as-of today --window-days 30  # 补齐已成熟 T+N 回测窗口
 sn analyze backtest-summary --window-days 30 --min-count 3 --top 20  # 近 30 天推荐人胜率
 ```
 
@@ -166,7 +167,7 @@ jobs:
     timeout: 20m
 
   - id: backtest-daily
-    command: cd /path/to/stock-news && uv run sn analyze backtest --date today
+    command: cd /path/to/stock-news && uv run sn analyze backtest refresh --as-of today --window-days 30
     at: "16:30"
     timeout: 20m
 ```
@@ -250,8 +251,10 @@ storage:
 - [ ] P3：报告发布（阿里云 OSS）
 - [x] P4：定时调度
 - [ ] P5：Channel 推送
+- [ ] P6：盘中策略快报（20 分钟 workflow + strategy markdown）
 
 详见 [技术方案](docs/cli-technical-design.md) 和 [实施计划](docs/implementation-plan.md)。
+策略快报设计见 [策略快报 Workflow](docs/strategy-workflow.md)。
 
 ## 开发
 
