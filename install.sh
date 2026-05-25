@@ -11,8 +11,24 @@ if ! command -v uv &> /dev/null; then
     exit 1
 fi
 
+REPO_URL="${STOCK_NEWS_REPO_URL:-https://github.com/DreamCats/stock-news.git}"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+
+if [ -f "$SCRIPT_DIR/pyproject.toml" ] && grep -q 'name = "stock-news"' "$SCRIPT_DIR/pyproject.toml"; then
+    PROJECT_DIR="$SCRIPT_DIR"
+else
+    if ! command -v git &> /dev/null; then
+        echo "错误: git 未安装"
+        exit 1
+    fi
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+    echo "拉取源码..."
+    git clone --depth 1 "$REPO_URL" "$TMP_DIR/stock-news"
+    PROJECT_DIR="$TMP_DIR/stock-news"
+fi
+
+cd "$PROJECT_DIR"
 
 echo "清理旧构建..."
 rm -rf dist build

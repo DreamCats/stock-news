@@ -7,6 +7,13 @@
 一键安装（推荐）：
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/DreamCats/stock-news/main/install.sh | bash
+sn --version
+```
+
+本地安装：
+
+```bash
 git clone https://github.com/DreamCats/stock-news.git
 cd stock-news
 ./install.sh
@@ -14,7 +21,7 @@ sn --version
 ```
 
 脚本会构建 wheel，并通过 `uv tool install` 全局注册 `sn` 命令。
-如果已经 clone 到本地，直接在项目目录执行 `./install.sh` 即可。
+如果已经 clone 到本地，直接在项目目录执行 `./install.sh` 即可。安装前需要本机已有 `uv`；使用 curl 安装时还需要 `git`。
 
 开发模式：
 
