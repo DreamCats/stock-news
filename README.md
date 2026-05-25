@@ -7,11 +7,14 @@
 一键安装（推荐）：
 
 ```bash
+git clone https://github.com/DreamCats/stock-news.git
+cd stock-news
 ./install.sh
 sn --version
 ```
 
 脚本会构建 wheel，并通过 `uv tool install` 全局注册 `sn` 命令。
+如果已经 clone 到本地，直接在项目目录执行 `./install.sh` 即可。
 
 开发模式：
 
