@@ -144,19 +144,19 @@ sn schedule uninstall
 ```yaml
 jobs:
   - id: fetch-day-window
-    command: cd /Users/bytedance/Work/tools/cli/stock-news && uv run sn fetch --source all --date today --time-range 09:00-23:00
+    command: cd /path/to/stock-news && uv run sn fetch --source all --date today --time-range 09:00-23:00
     every: 20m
     active_hours: "09:00-23:00"
     timeout: 10m
 
   - id: analyze-today
-    command: cd /Users/bytedance/Work/tools/cli/stock-news && uv run sn analyze classify --date today && uv run sn analyze extract --date today
+    command: cd /path/to/stock-news && uv run sn analyze classify --date today && uv run sn analyze extract --date today
     every: 20m
     active_hours: "09:05-23:10"
     timeout: 20m
 
   - id: backtest-daily
-    command: cd /Users/bytedance/Work/tools/cli/stock-news && uv run sn analyze backtest --date today
+    command: cd /path/to/stock-news && uv run sn analyze backtest --date today
     at: "16:30"
     timeout: 20m
 ```
