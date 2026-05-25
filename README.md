@@ -70,6 +70,16 @@ sn fetch --source 个人群 --last 2h
 sn fetch --source all --date today --time-range 09:00-23:00
 ```
 
+### 历史补齐 `sn backfill`
+
+```bash
+sn backfill --days 30 --end-date today --time-range 09:00-23:00
+sn backfill --days 30 --dry-run
+```
+
+按日期从旧到新顺序执行 `fetch → classify → extract → opinion`。
+各阶段复用已有增量语义：已缓存的 fetch 切片会跳过，已处理的消息不会重复分类、抽取或归并观点。
+
 ### 数据查询 `sn data`
 
 ```bash
