@@ -17,3 +17,4 @@ data/
 
 # macOS
 .DS_Store
+dist
