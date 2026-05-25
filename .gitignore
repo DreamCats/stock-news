@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# uv / venv
+.venv/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+
+# Sensitive data (boss's private samples) — never track
+data/
+
+# macOS
+.DS_Store
