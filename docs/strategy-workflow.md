@@ -34,15 +34,16 @@
 建议命令：
 
 ```bash
-sn strategy generate --date today --window-minutes 20 --backtest-days 30
+sn strategy generate --date today --window-minutes 20 --top 5
 ```
 
 默认行为：
 
-- 内部刷新 `backtest-summary --window-days <backtest-days>`。
+- 读取已有 `backtest_summary/sender_stats.json`。
 - 读取 recommendations、opinions、sender_stats。
 - 生成中间策略结构 `strategy/strategy.json`。
 - 生成可投递内容 `strategy/strategy.md`。
+- 暂不默认调用 LLM；后续只把压缩后的 `strategy.json` Top N 候选送给 LLM 做文字归纳。
 
 不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活由 workflow 显式编排。
 
@@ -66,6 +67,7 @@ fetch
 → extract
 → opinion
 → backtest refresh --as-of today --window-days 30
+→ backtest-summary --window-days 30
 → strategy generate
 → delivery send
 ```
@@ -75,7 +77,8 @@ fetch
 - `fetch` 用当天窗口加去重，避免漏消息。
 - `classify/extract/opinion` 都应按 `message_id` 增量处理。
 - `backtest refresh` 补齐过去 30 天推荐里已经成熟的 T+N 窗口；当天推荐通常没有 T+1 结果，只进入策略候选和盘中跟踪，不进入完整回测。
-- `strategy generate` 内部刷新近 30 天推荐人统计。
+- `backtest-summary` 刷新近 30 天推荐人统计。
+- `strategy generate` 读取已有推荐人统计并生成快报。
 - `delivery` 发送 markdown 产物。
 
 如果本轮没有新增推荐或观点变化，`strategy` 应输出 `has_updates=false`。workflow 可以选择不发送，或发送极短的“本轮无新增有效推荐”。
