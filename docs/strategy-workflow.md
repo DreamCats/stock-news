@@ -23,9 +23,9 @@
 - `opinion`：观点链归并，增量处理；只判断推荐人观点如何变化，不做推荐人可信度评分。
 - `backtest`：生成单日推荐回测明细。
 - `backtest refresh`：扫描近 N 天推荐，补齐已经成熟的 T+1/T+2/T+3/T+5/T+10 窗口。
-- `backtest-summary`：汇总近 N 天推荐人表现。
+- `backtest summary`：汇总近 N 天推荐人表现。
 
-`opinion` 不消费 `backtest-summary`。观点链只关心“这个推荐人现在说了什么、和他之前说法相比发生了什么变化”。
+`opinion` 不消费 `backtest summary`。观点链只关心“这个推荐人现在说了什么、和他之前说法相比发生了什么变化”。
 
 ### strategy
 
@@ -67,7 +67,7 @@ fetch
 → extract
 → opinion
 → backtest refresh --as-of today --window-days 30
-→ backtest-summary --window-days 30
+→ backtest summary --window-days 30
 → strategy generate
 → delivery send
 ```
@@ -77,7 +77,7 @@ fetch
 - `fetch` 用当天窗口加去重，避免漏消息。
 - `classify/extract/opinion` 都应按 `message_id` 增量处理。
 - `backtest refresh` 补齐过去 30 天推荐里已经成熟的 T+N 窗口；当天推荐通常没有 T+1 结果，只进入策略候选和盘中跟踪，不进入完整回测。
-- `backtest-summary` 刷新近 30 天推荐人统计。
+- `backtest summary` 刷新近 30 天推荐人统计。
 - `strategy generate` 读取已有推荐人统计并生成快报。
 - `delivery` 发送 markdown 产物。
 

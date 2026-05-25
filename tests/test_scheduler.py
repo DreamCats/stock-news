@@ -67,8 +67,12 @@ def test_disabled_job_is_skipped(tmp_path: Path) -> None:
     assert state["off"].total_runs == 0
 
 
-def test_sched_alias_is_registered() -> None:
-    result = CliRunner().invoke(main, ["sched", "--help"])
+def test_schedule_command_is_registered_without_alias() -> None:
+    result = CliRunner().invoke(main, ["schedule", "--help"])
 
     assert result.exit_code == 0
     assert "tick" in result.output
+
+    result = CliRunner().invoke(main, ["--help"])
+    assert "schedule" in result.output
+    assert "  sched " not in result.output

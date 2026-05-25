@@ -261,7 +261,7 @@ def analyze_backtest_refresh(
     run_backtest_refresh(as_of_str, window_days, ctx.obj["json_output"])
 
 
-@analyze.command("backtest-summary")
+@analyze_backtest.command("summary")
 @click.option("--top", "-n", type=int, default=None, help="只显示前 N 名")
 @click.option(
     "--min-count",
@@ -506,7 +506,6 @@ def _register_schedule_commands() -> None:
     from stock_news.commands.schedule_cmd import schedule
 
     main.add_command(schedule, "schedule")
-    main.add_command(schedule, "sched")
 
 
 def _register_delivery_commands() -> None:

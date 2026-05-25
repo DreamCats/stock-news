@@ -90,7 +90,7 @@ sn analyze opinion --date today            # 观点链归并（按发送人并�
 sn analyze show --date today               # 查看分析摘要
 sn analyze backtest --date today           # 回测单日推荐表现
 sn analyze backtest refresh --as-of today --window-days 30  # 补齐已成熟 T+N 回测窗口
-sn analyze backtest-summary --window-days 30 --min-count 3 --top 20  # 近 30 天推荐人胜率
+sn analyze backtest summary --window-days 30 --min-count 3 --top 20  # 近 30 天推荐人胜率
 ```
 
 分析流水线为增量设计：classify 和 extract 只处理新消息，重复运行不会重复消耗 LLM。
@@ -142,7 +142,7 @@ sn config set api.timeout 60
 sn config set storage.data_dir ~/my-data
 ```
 
-### 定时调度 `sn schedule` / `sn sched`
+### 定时调度 `sn schedule`
 
 ```bash
 sn schedule install                  # 安装 launchd 10 分钟 tick
@@ -157,7 +157,6 @@ sn schedule uninstall
 
 配置文件在 `~/.config/stock-news/schedule.yaml`。首次运行会生成空配置，
 默认不预置任何会打 API 的 job；需要手动填 `jobs` 后再安装或 tick。
-`sn sched` 是 `sn schedule` 的短别名，适合日常少敲几个字。
 
 持续运行的盘中任务建议把采集和分析拆开：采集每 20 分钟跑当天
 `09:00-23:00` 的窗口；分析继续使用 `--date today`，第二天会自动滚动。

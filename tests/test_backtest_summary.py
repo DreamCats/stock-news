@@ -4,6 +4,9 @@ import json
 from datetime import date
 from types import SimpleNamespace
 
+from click.testing import CliRunner
+
+from stock_news.cli import main
 from stock_news.commands import backtest
 
 
@@ -77,3 +80,33 @@ def test_backtest_summary_all_includes_all_dates(
     assert payload["meta"]["end_date"] is None
     assert payload["meta"]["dates"] == ["2026-04-24", "2026-05-25"]
     assert payload["meta"]["total_records"] == 2
+
+
+def test_backtest_summary_cli_is_nested(monkeypatch) -> None:
+    calls: list[tuple[bool, int | None, int, int | None]] = []
+    monkeypatch.setattr(
+        backtest,
+        "run_backtest_summary",
+        lambda json_output, top=None, min_count=1, window_days=30: calls.append(
+            (json_output, top, min_count, window_days)
+        ),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--json",
+            "analyze",
+            "backtest",
+            "summary",
+            "--window-days",
+            "30",
+            "--min-count",
+            "3",
+            "--top",
+            "20",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [(True, 20, 3, 30)]
