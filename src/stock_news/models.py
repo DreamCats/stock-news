@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class MessageSource(str, Enum):
@@ -109,8 +110,47 @@ class ScheduleConfig(BaseModel):
     log_dir: str = "~/.config/stock-news/logs"
 
 
+class DeliveryProviderConfig(BaseModel):
+    type: Literal["feishu_bot"]
+    app_id: str
+    app_secret: str
+    base_url: str = "https://open.feishu.cn"
+    timeout: int = 30
+
+
+class DeliveryTargetConfig(BaseModel):
+    provider: str
+    kind: Literal["user", "chat"]
+    id: str | None = None
+    email: str | None = None
+    name: str | None = None
+    resolved_id: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> DeliveryTargetConfig:
+        if self.kind == "chat":
+            if not self.id:
+                raise ValueError("chat target 必须配置 id/chat_id")
+        elif not any([self.id, self.email, self.name, self.resolved_id]):
+            raise ValueError("user target 必须配置 open_id、email、name 或 resolved_id")
+        return self
+
+
+class DeliveryRouteConfig(BaseModel):
+    targets: list[str] = Field(default_factory=list)
+    format: Literal["text", "post", "markdown"] = "post"
+    fail_fast: bool = False
+
+
+class DeliveryConfig(BaseModel):
+    providers: dict[str, DeliveryProviderConfig] = Field(default_factory=dict)
+    targets: dict[str, DeliveryTargetConfig] = Field(default_factory=dict)
+    routes: dict[str, DeliveryRouteConfig] = Field(default_factory=dict)
+
+
 class AppConfig(BaseModel):
     api: APIConfig = APIConfig()
     llm: LLMConfig = LLMConfig()
     storage: StorageConfig = StorageConfig()
     schedule: ScheduleConfig = ScheduleConfig()
+    delivery: DeliveryConfig = DeliveryConfig()

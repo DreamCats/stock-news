@@ -453,7 +453,14 @@ def _register_schedule_commands() -> None:
     main.add_command(schedule, "sched")
 
 
+def _register_delivery_commands() -> None:
+    from stock_news.commands.delivery import delivery
+
+    main.add_command(delivery, "delivery")
+
+
 _register_schedule_commands()
+_register_delivery_commands()
 
 
 # -- entry --
