@@ -6,6 +6,7 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import click
@@ -23,6 +24,8 @@ CONCURRENCY = 8
 OPINION_BATCH_SIZE = 16
 OPINION_HISTORY_LIMIT = 80
 OPINION_MESSAGE_CHAR_LIMIT = 1500
+OPINION_REVIEW_CONFIDENCE_THRESHOLD = 0.75
+OPINION_RISK_UPDATE_TYPES = {"revise", "reverse", "withdraw"}
 
 
 def _opinions_path(cfg_data_dir: str, dt: date) -> Path:
@@ -115,7 +118,54 @@ def _opinion_node_from_result(
         stance=str(result.get("stance", "neutral")),
         update_type=str(result.get("update_type", "new")),
         summary=str(result.get("summary", "")),
+        confidence=_as_confidence(result.get("confidence")),
+        candidate_existing_topic=_optional_str(result.get("candidate_existing_topic")),
     )
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _as_confidence(value: object, default: float = 0.8) -> float:
+    if value is None:
+        return default
+    try:
+        confidence = float(str(value))
+    except (TypeError, ValueError):
+        return default
+    return min(max(confidence, 0.0), 1.0)
+
+
+def _similar_topic(a: str, b: str) -> bool:
+    if not a or not b or a == b:
+        return False
+    if a in b or b in a:
+        return True
+    return SequenceMatcher(None, a, b).ratio() >= 0.82
+
+
+def _needs_slow_review(node: OpinionNode, history: list[OpinionNode]) -> bool:
+    if node.confidence < OPINION_REVIEW_CONFIDENCE_THRESHOLD:
+        return True
+    if node.update_type in OPINION_RISK_UPDATE_TYPES:
+        return True
+
+    history_topics = {item.topic_key for item in history}
+    if (
+        node.candidate_existing_topic
+        and node.candidate_existing_topic in history_topics
+        and node.candidate_existing_topic != node.topic_key
+    ):
+        return True
+
+    if node.update_type == "new":
+        return any(_similar_topic(node.topic_key, topic) for topic in history_topics)
+
+    return False
 
 
 def _analyze_opinion(
@@ -139,6 +189,36 @@ def _analyze_opinion(
         [{"role": "user", "content": prompt}],
         provider_name=provider_name,
         disable_thinking=True,
+    )
+
+    topic_key = str(result.get("topic_key", ""))
+    if not topic_key:
+        return None
+
+    return _opinion_node_from_result(msg, result)
+
+
+def _review_opinion(
+    msg: RawMessage,
+    history_text: str,
+    provider_name: str | None,
+) -> OpinionNode | None:
+    from stock_news.common.llm.client import chat_json, get_provider_for_task
+    from stock_news.common.llm.prompts import render_prompt
+
+    if not provider_name:
+        provider_name, _ = get_provider_for_task("opinion")
+
+    prompt = render_prompt(
+        "opinion",
+        sender=msg.sender,
+        raw_content=msg.raw_content,
+        history=history_text or "(无历史观点)",
+    )
+    result = chat_json(
+        [{"role": "user", "content": prompt}],
+        provider_name=provider_name,
+        disable_thinking=False,
     )
 
     topic_key = str(result.get("topic_key", ""))
@@ -283,11 +363,12 @@ def opinion(
     def _process_sender(
         sender: str,
         sender_rec_list: list[Recommendation],
-    ) -> tuple[list[OpinionNode], set[str], int]:
+    ) -> tuple[list[OpinionNode], set[str], int, int]:
         history = _history_from_opinions(opinions_by_sender.get(sender, []))
         nodes: list[OpinionNode] = []
         done_ids: set[str] = set()
         failed = 0
+        reviewed = 0
 
         def _append_node(node: OpinionNode | None) -> None:
             if not node:
@@ -307,9 +388,32 @@ def opinion(
             if len(history) > OPINION_HISTORY_LIMIT:
                 del history[:-OPINION_HISTORY_LIMIT]
 
+        def _maybe_review(
+            node: OpinionNode | None, msg: RawMessage
+        ) -> OpinionNode | None:
+            nonlocal reviewed
+            if not node:
+                return None
+            sender_history = opinions_by_sender.get(sender, []) + nodes
+            if not _needs_slow_review(node, sender_history):
+                return node
+            reviewed += 1
+            try:
+                reviewed_node = _review_opinion(
+                    msg,
+                    "\n---\n".join(history),
+                    provider_name,
+                )
+            except Exception:
+                return node
+            return reviewed_node or node
+
         def _fallback_one(msg: RawMessage) -> bool:
             try:
-                node = _analyze_opinion(msg, history_text, provider_name)
+                node = _maybe_review(
+                    _analyze_opinion(msg, history_text, provider_name),
+                    msg,
+                )
                 _append_node(node)
                 done_ids.add(msg.message_id)
                 return True
@@ -346,19 +450,20 @@ def opinion(
 
             for idx, msg in enumerate(batch_msgs):
                 if idx in batch_nodes:
-                    _append_node(batch_nodes[idx])
+                    _append_node(_maybe_review(batch_nodes[idx], msg))
                     done_ids.add(msg.message_id)
                     continue
 
                 history_text = "\n---\n".join(history)
                 if not _fallback_one(msg):
                     failed += 1
-        return nodes, done_ids, failed
+        return nodes, done_ids, failed, reviewed
 
     opinions = list(existing_opinions)
     done_count = 0
     new_count = 0
     failed_count = 0
+    review_count = 0
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
         futures = {
@@ -366,10 +471,11 @@ def opinion(
             for sender, rec_list in sender_recs.items()
         }
         for future in as_completed(futures):
-            nodes, done_ids, failed = future.result()
+            nodes, done_ids, failed, reviewed = future.result()
             opinions.extend(nodes)
             processed_ids.update(done_ids)
             failed_count += failed
+            review_count += reviewed
             new_count += len(nodes)
             done_count += 1
             _save_opinion_state(cfg.storage.data_dir, dt, opinions, processed_ids)
@@ -394,6 +500,7 @@ def opinion(
                         "new": new_count,
                         "total": len(opinions),
                         "failed": failed_count,
+                        "reviewed": review_count,
                         "opinions": [o.model_dump(mode="json") for o in opinions],
                     },
                     "message": (
@@ -410,6 +517,8 @@ def opinion(
         )
         if failed_count:
             click.echo(f"  {failed_count} 条处理失败，下次会自动重试")
+        if review_count:
+            click.echo(f"  慢速复核 {review_count} 条")
         new_opinions = opinions[-new_count:] if new_count else []
         for o in new_opinions:
             click.echo(

@@ -55,14 +55,30 @@ class Recommendation(BaseModel):
     source: str = ""
     sender: str
     message_time: datetime | None = None
+    target_type: str = "stock"
+    target_name: str | None = None
     ticker: str
     market: str | None = None
+    raw_action: str | None = None
+    normalized_action: str | None = None
     action: str
     strength: str
     horizon: str | None = None
     reasoning: str | None = None
     risk_note: str | None = None
+    confidence: float = 0.8
+    evidence: str | None = None
     raw_content: str
+
+    @model_validator(mode="after")
+    def _fill_derived_fields(self) -> Recommendation:
+        if not self.target_name:
+            self.target_name = self.ticker
+        if not self.raw_action:
+            self.raw_action = self.action
+        if not self.normalized_action:
+            self.normalized_action = self.action
+        return self
 
 
 class OpinionNode(BaseModel):
@@ -75,6 +91,8 @@ class OpinionNode(BaseModel):
     update_type: str
     previous_id: str | None = None
     summary: str
+    confidence: float = 0.8
+    candidate_existing_topic: str | None = None
 
 
 # -- config models --

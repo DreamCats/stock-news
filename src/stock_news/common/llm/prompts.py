@@ -30,16 +30,24 @@ BUILTIN_PROMPTS: dict[str, str] = {
 如果消息包含多个标的推荐，返回 JSON 数组；如果只有一个，也返回数组（只有一个元素）。
 
 每个推荐的字段：
-- ticker: 股票名称或代码（如 "贵州茅台" 或 "600519"）
-- market: A股/港股/美股，不确定填 null
-- action: 关注/买入/加仓/减仓/卖出
+- target_type: stock/sector/theme/index/macro/unknown
+- target_name: 标的、板块、主题或宏观变量名称
+- ticker: 股票名称或代码；如果不是个股，填 null
+- market: A股/港股/美股，不确定或跨市场填 null
+- action: 只能填 关注/买入/加仓/减仓/卖出
 - strength: 高/中/低（根据措辞判断推荐强度）
 - horizon: 日内/短线/波段/中线，不确定填 null
 - reasoning: 一句话推荐理由
 - risk_note: 风险提示，没有填 null
+- confidence: 0.0到1.0，表示抽取置信度
+- evidence: 支持该推荐的关键短句
 
 返回格式：
-[{{"ticker": "...", "market": "...", "action": "...", "strength": "...", "horizon": "...", "reasoning": "...", "risk_note": "..."}}]
+[{{"target_type": "stock|sector|theme|index|macro|unknown", "target_name": "...", "ticker": "...", "market": "...", "action": "关注|买入|加仓|减仓|卖出", "strength": "高|中|低", "horizon": "...", "reasoning": "...", "risk_note": "...", "confidence": 0.0, "evidence": "..."}}]
+
+注意：
+- 板块/主题推荐也要抽取，不要因为没有具体个股而返回空数组
+- action 必须归一到允许枚举，不要输出"看好/推荐/强推/首推/加推"
 
 发送人：{sender}
 消息内容：
@@ -56,7 +64,11 @@ BUILTIN_PROMPTS: dict[str, str] = {
 - withdraw: 撤回或否定之前的判断
 
 返回纯 JSON（不要 markdown 代码块）：
-{{"topic_key": "标的或主题关键词", "stance": "bullish|bearish|neutral|mixed", "update_type": "new|reinforce|supplement|revise|reverse|withdraw", "summary": "一句话观点摘要"}}
+{{"topic_key": "标的或主题关键词", "stance": "bullish|bearish|neutral|mixed", "update_type": "new|reinforce|supplement|revise|reverse|withdraw", "summary": "一句话观点摘要", "confidence": 0.0到1.0, "candidate_existing_topic": "最可能承接的历史 topic_key；没有则填 null"}}
+
+注意：
+- 如果当前消息是在延续历史主题，candidate_existing_topic 必须填历史里的原 topic_key
+- 如果不确定是新主题还是历史主题，降低 confidence
 
 发送人：{sender}
 当前消息：
@@ -77,13 +89,15 @@ BUILTIN_PROMPTS: dict[str, str] = {
 
 每个结果必须包含 index 字段（对应输入编号）。
 返回格式：
-[{{"index": 1, "topic_key": "标的或主题关键词", "stance": "bullish|bearish|neutral|mixed", "update_type": "new|reinforce|supplement|revise|reverse|withdraw", "summary": "一句话观点摘要"}}, ...]
+[{{"index": 1, "topic_key": "标的或主题关键词", "stance": "bullish|bearish|neutral|mixed", "update_type": "new|reinforce|supplement|revise|reverse|withdraw", "summary": "一句话观点摘要", "confidence": 0.0到1.0, "candidate_existing_topic": "最可能承接的历史 topic_key；没有则填 null"}}, ...]
 
 注意：
 - 必须为每条消息都返回结果，不要遗漏
 - index 必须与输入编号严格对应
 - 请按输入编号顺序分析，前序消息视为后续消息的新增历史观点
 - 如果某条消息无法判断观点，topic_key 填空字符串
+- 如果当前消息是在延续历史主题，candidate_existing_topic 必须填历史里的原 topic_key
+- 如果不确定是新主题还是历史主题，降低 confidence
 
 发送人：{sender}
 
@@ -118,20 +132,26 @@ BUILTIN_PROMPTS: dict[str, str] = {
 如果某条消息无法抽取推荐，items 为空数组。
 
 每个推荐的字段：
-- ticker: 股票名称或代码（如 "贵州茅台" 或 "600519"）
-- market: A股/港股/美股，不确定填 null
-- action: 关注/买入/加仓/减仓/卖出
+- target_type: stock/sector/theme/index/macro/unknown
+- target_name: 标的、板块、主题或宏观变量名称
+- ticker: 股票名称或代码；如果不是个股，填 null
+- market: A股/港股/美股，不确定或跨市场填 null
+- action: 只能填 关注/买入/加仓/减仓/卖出
 - strength: 高/中/低（根据措辞判断推荐强度）
 - horizon: 日内/短线/波段/中线，不确定填 null
 - reasoning: 一句话推荐理由
 - risk_note: 风险提示，没有填 null
+- confidence: 0.0到1.0，表示抽取置信度
+- evidence: 支持该推荐的关键短句
 
 返回格式：
-[{{"index": 1, "items": [{{"ticker": "...", "market": "...", "action": "...", "strength": "...", "horizon": "...", "reasoning": "...", "risk_note": "..."}}]}}, ...]
+[{{"index": 1, "items": [{{"target_type": "stock|sector|theme|index|macro|unknown", "target_name": "...", "ticker": "...", "market": "...", "action": "关注|买入|加仓|减仓|卖出", "strength": "高|中|低", "horizon": "...", "reasoning": "...", "risk_note": "...", "confidence": 0.0, "evidence": "..."}}]}}, ...]
 
 注意：
 - 必须为每条消息都返回结果（即使 items 为空），不要遗漏
 - index 必须与输入编号严格对应
+- 板块/主题推荐也要抽取，不要因为没有具体个股而返回空数组
+- action 必须归一到允许枚举，不要输出"看好/推荐/强推/首推/加推"
 
 以下是待抽取的消息：
 {messages}""",

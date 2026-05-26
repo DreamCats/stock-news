@@ -244,6 +244,72 @@ def test_opinion_batches_messages_by_sender(
     assert saved[2]["previous_id"] == messages[1].message_id
 
 
+def test_opinion_low_confidence_batch_result_gets_reviewed(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    msg = _raw_message("寒武纪订单改善", 1)
+    _write_raw_messages(tmp_path, [msg])
+    _write_recommendations(tmp_path, [_recommendation(msg)])
+
+    def fake_single(msg: RawMessage, history: str, provider_name: str | None):
+        return OpinionNode(
+            opinion_id="fast",
+            version=1,
+            message_id=msg.message_id,
+            sender=msg.sender,
+            topic_key="寒武纪订单",
+            stance="bullish",
+            update_type="new",
+            summary="低置信快判",
+            confidence=0.6,
+            candidate_existing_topic=None,
+        )
+
+    review_calls: list[str] = []
+
+    def fake_review(msg: RawMessage, history: str, provider_name: str | None):
+        review_calls.append(msg.message_id)
+        return OpinionNode(
+            opinion_id="reviewed",
+            version=1,
+            message_id=msg.message_id,
+            sender=msg.sender,
+            topic_key="寒武纪",
+            stance="bullish",
+            update_type="supplement",
+            summary="复核后承接寒武纪",
+            confidence=0.9,
+            candidate_existing_topic="寒武纪",
+        )
+
+    monkeypatch.setattr(
+        opinion_mod,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(opinion_mod, "_analyze_opinion", fake_single)
+    monkeypatch.setattr(opinion_mod, "_review_opinion", fake_review)
+
+    opinion_mod.opinion("2026-05-25", provider_name=None, json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["new"] == 1
+    assert payload["data"]["reviewed"] == 1
+    assert review_calls == [msg.message_id]
+
+    saved = json.loads(
+        (tmp_path / "2026-05-25" / "opinions" / "opinions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert saved[0]["opinion_id"] == "reviewed"
+    assert saved[0]["topic_key"] == "寒武纪"
+    assert saved[0]["confidence"] == 0.9
+    assert saved[0]["candidate_existing_topic"] == "寒武纪"
+
+
 def test_opinion_failure_is_not_marked_processed(
     tmp_path,
     monkeypatch,
