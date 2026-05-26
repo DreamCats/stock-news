@@ -143,6 +143,8 @@ def test_strategy_separates_stock_trades_from_theme_clues(
     )
     assert "## 主题/板块线索" in markdown
     assert "国产算力" in markdown
+    assert "| 寒武纪 |" in markdown
+    assert "| 国产算力 |" not in markdown
 
 
 def test_strategy_generate_cli(monkeypatch) -> None:

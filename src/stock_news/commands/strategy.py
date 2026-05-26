@@ -178,7 +178,7 @@ def _build_recommendation_item(
 def _build_consensus(
     recs: list[Recommendation],
     sender_stats: dict[str, dict[str, Any]],
-    top: int,
+    top: int | None,
 ) -> list[dict[str, Any]]:
     by_target: dict[str, list[Recommendation]] = {}
     for rec in recs:
@@ -229,7 +229,8 @@ def _build_consensus(
             }
         )
 
-    return sorted(items, key=lambda item: item["score"], reverse=True)[:top]
+    ranked = sorted(items, key=lambda item: item["score"], reverse=True)
+    return ranked[:top] if top is not None else ranked
 
 
 def _build_opinion_changes(
@@ -409,11 +410,18 @@ def _build_payload(
             item for item in opinion_changes if item["message_id"] in new_rec_ids
         ]
 
-    consensus = _build_consensus(new_recs, sender_stats, top)
+    consensus_all = _build_consensus(new_recs, sender_stats, None)
+    consensus = consensus_all[:top]
     conflicts = _build_conflicts(new_recs, opinions, top)
-    candidates = _build_candidate_trades(consensus, opinion_changes, top)
-    theme_clues = _build_theme_clues(consensus, top)
-    involved_senders = sorted({rec.sender for rec in new_recs})
+    candidates = _build_candidate_trades(consensus_all, opinion_changes, top)
+    theme_clues = _build_theme_clues(consensus_all, top)
+    involved_senders = sorted(
+        {
+            sender
+            for item in candidates + theme_clues
+            for sender in item.get("senders", [])
+        }
+    )
     involved_stats = {
         sender: sender_stats[sender]
         for sender in involved_senders
@@ -487,33 +495,30 @@ def _render_markdown(payload: dict[str, Any]) -> str:
             )
 
     lines.extend(["", "## 新增可交易机会"])
-    lines.append("| 类型 | 标的 | 动作 | 推荐人 | 30d T+5胜率 | 样本 | 证据 | 风险 |")
-    lines.append("| --- | --- | --- | --- | ---: | ---: | --- | --- |")
-    trade_recs = [
-        rec
-        for rec in payload["new_recommendations"]
-        if rec["target_type"] == TRADE_TARGET_TYPE
-    ]
-    for rec in trade_recs:
-        stat = rec["sender_30d"]
+    lines.append("| 标的 | score | confidence | 推荐人 | 核心证据 | 风险 |")
+    lines.append("| --- | ---: | ---: | --- | --- | --- |")
+    for item in candidates:
+        senders = "、".join(item["senders"][:5])
+        if len(item["senders"]) > 5:
+            senders += f" 等{len(item['senders'])}人"
+        clue = "；".join(item["evidences"] or item["reasons"]) or "-"
+        risks = "；".join(item["risks"]) or "-"
         lines.append(
             "| "
             + " | ".join(
                 [
-                    _cell(rec["target_type"]),
-                    _cell(rec["target_name"]),
-                    _cell(rec["action"]),
-                    _cell(rec["sender"]),
-                    _pct(stat.get("win_rate_t5")),
-                    _cell(stat.get("count")),
-                    _cell(rec.get("evidence") or rec.get("reasoning")),
-                    _cell(rec.get("risk_note")),
+                    _cell(item["target_name"]),
+                    _cell(item["score"]),
+                    _pct(item.get("confidence")),
+                    _cell(senders),
+                    _cell(clue),
+                    _cell(risks),
                 ]
             )
             + " |"
         )
-    if not trade_recs:
-        lines.append("| - | - | - | - | - | - | 本轮无新增可交易个股 | - |")
+    if not candidates:
+        lines.append("| - | - | - | - | 本轮无新增可交易个股 | - |")
 
     lines.extend(["", "## 共识增强"])
     if payload["top_consensus"]:
@@ -548,12 +553,12 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         lines.append("- 本轮涉及推荐人暂无 30d 回测样本。")
 
     lines.extend(["", "## 原始线索"])
-    for rec in payload["new_recommendations"][:5]:
-        clue = (
-            rec.get("evidence") or rec.get("reasoning") or rec.get("risk_note") or "-"
-        )
-        lines.append(f"- {rec['target_name']} / {rec['sender']}：{clue}")
-    if not payload["new_recommendations"]:
+    clue_items = payload["candidate_trades"][:3] + payload["theme_clues"][:2]
+    for item in clue_items:
+        clue = "；".join(item.get("evidences") or item.get("reasons") or []) or "-"
+        senders = "、".join(item.get("senders", [])[:3])
+        lines.append(f"- {item['target_name']} / {senders}：{clue}")
+    if not clue_items:
         lines.append("- 无。")
 
     return "\n".join(lines) + "\n"
