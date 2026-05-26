@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 
 from click.testing import CliRunner
@@ -9,6 +9,12 @@ from click.testing import CliRunner
 from stock_news.cli import main
 from stock_news.commands import backtest
 from stock_news.models import Recommendation
+
+
+class FixedDate(date):
+    @classmethod
+    def today(cls) -> date:
+        return cls(2026, 5, 25)
 
 
 def _rec(message_id: str, day: str, ticker: str = "测试股份") -> Recommendation:
@@ -116,6 +122,58 @@ def test_backtest_refresh_updates_missing_mature_windows(
     old = next(item for item in results if item["message_id"] == "old-1")
     assert old["ret_t2"] == 0.02
     assert (backtest_dir / "sender_stats.json").exists()
+
+
+def test_backtest_date_reuses_incremental_refresh_semantics(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    rec = _rec("complete-1", "2026-05-20")
+    _write_recs(tmp_path, "2026-05-20", [rec])
+
+    backtest_dir = tmp_path / "2026-05-20" / "backtest"
+    backtest_dir.mkdir()
+    (backtest_dir / "results.json").write_text(
+        json.dumps(
+            [
+                {
+                    "message_id": "complete-1",
+                    "sender": "张三",
+                    "ticker": "测试股份",
+                    "action": "买入",
+                    "rec_date": "20260520",
+                    "ret_t1": 0.01,
+                    "win_t1": True,
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+    monkeypatch.setattr(backtest, "date", FixedDate)
+    monkeypatch.setattr(
+        backtest,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(backtest, "_mature_windows", lambda rec_dt, as_of: [1])
+    monkeypatch.setattr(
+        backtest,
+        "_backtest_one",
+        lambda rec, ts_code, rec_date, as_of=None: calls.append(rec.message_id),
+    )
+
+    backtest.run_backtest("2026-05-20", json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["as_of"] == "2026-05-25"
+    assert payload["skipped_complete"] == 1
+    assert payload["refreshed"] == 0
+    assert payload["results"] == 1
+    assert calls == []
 
 
 def test_backtest_refresh_reports_progress_and_caches_ticker(

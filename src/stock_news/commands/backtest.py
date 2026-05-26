@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 from collections import defaultdict
 from datetime import date, timedelta
@@ -152,102 +151,46 @@ def _backtest_one(
 def run_backtest(date_str: str, json_output: bool) -> None:
     cfg = load()
     dt = _parse_date(date_str)
-    recs = _load_recommendations(cfg.storage.data_dir, dt)
-
-    if not recs:
-        click.echo(f"{dt} 无推荐数据")
-        return
-
+    as_of = date.today()
     if not json_output:
-        click.echo(f"回测 {dt}: {len(recs)} 条推荐", err=True)
-
-    # -- 阶段 1: 名称→代码映射 --
-    if not json_output:
-        click.echo("\n[1/3] 名称→代码映射...", err=True)
-
-    resolved_items: list[tuple[Recommendation, str]] = []
-    skipped_tickers: list[str] = []
-
-    for i, rec in enumerate(recs):
-        ts_code = _resolve_ticker(rec.ticker)
-        if not ts_code:
-            if rec.ticker not in skipped_tickers:
-                skipped_tickers.append(rec.ticker)
-            continue
-        rec_date = (
-            rec.message_time.strftime("%Y%m%d")
-            if rec.message_time
-            else dt.strftime("%Y%m%d")
-        )
-        resolved_items.append((rec, ts_code))
-
-    if not json_output:
-        n_tickers = len(set(ts for _, ts in resolved_items))
         click.echo(
-            f"  匹配: {len(resolved_items)} 条 ({n_tickers} 个标的), "
-            f"跳过: {len(skipped_tickers)} 个",
+            f"刷新单日回测: {dt.isoformat()}，截至 {as_of.isoformat()}",
             err=True,
         )
-        if skipped_tickers:
-            click.echo(f"  未匹配: {', '.join(skipped_tickers[:15])}", err=True)
 
-    # -- 阶段 2: 拉取行情数据 --
-    if not json_output:
-        click.echo("\n[2/3] 拉取行情数据 (本地有缓存则跳过)...", err=True)
-
-    bt_results: list[dict[str, Any]] = []
-    total = len(resolved_items)
-
-    for i, (rec, ts_code) in enumerate(resolved_items):
-        rec_date = (
-            rec.message_time.strftime("%Y%m%d")
-            if rec.message_time
-            else dt.strftime("%Y%m%d")
-        )
-        result = _backtest_one(rec, ts_code, rec_date)
-        if result:
-            bt_results.append(result)
-
-        if not json_output:
-            done = i + 1
-            pct = done * 100 // total
-            bar = "█" * (pct // 4) + "░" * (25 - pct // 4)
-            sys.stderr.write(f"\r  {bar} {pct:>3}% ({done}/{total})")
-            sys.stderr.flush()
-
-    if not json_output:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
-    # -- 阶段 3: 聚合统计 --
-    if not json_output:
-        click.echo("\n[3/3] 聚合推荐人统计...", err=True)
-
-    out_dir = Path(cfg.storage.data_dir).expanduser() / dt.isoformat() / "backtest"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "results.json"
-    out_path.write_text(
-        json.dumps(bt_results, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    stats = _refresh_one_day(
+        cfg.storage.data_dir,
+        dt,
+        as_of,
+        ticker_cache={},
+        mature_cache={},
+        json_output=json_output,
+        label="[1/1]",
     )
-
+    bt_results = _load_backtest_results(cfg.storage.data_dir, dt)
     sender_stats = _aggregate_by_sender(bt_results)
-
-    stats_path = out_dir / "sender_stats.json"
-    stats_path.write_text(
-        json.dumps(sender_stats, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
 
     if json_output:
         click.echo(
             json.dumps(
-                {"results": len(bt_results), "sender_stats": sender_stats},
+                {
+                    "date": dt.isoformat(),
+                    "as_of": as_of.isoformat(),
+                    **stats,
+                    "results": len(bt_results),
+                    "sender_stats": sender_stats,
+                },
                 ensure_ascii=False,
             )
         )
     else:
-        click.echo(f"\n回测完成: {len(bt_results)} 条有效结果")
+        out_path = (
+            Path(cfg.storage.data_dir).expanduser()
+            / dt.isoformat()
+            / "backtest"
+            / "results.json"
+        )
+        click.echo(f"\n回测刷新完成: {len(bt_results)} 条有效结果")
         click.echo(f"结果保存: {out_path}")
 
         header = f"{'推荐人':<16} {'次数':>4} "
@@ -345,6 +288,136 @@ def _emit_refresh_progress(
     return now
 
 
+def _refresh_one_day(
+    cfg_data_dir: str,
+    dt: date,
+    as_of: date,
+    ticker_cache: dict[str, str | None],
+    mature_cache: dict[date, list[int]],
+    json_output: bool,
+    label: str | None = None,
+) -> dict[str, Any]:
+    recs = _load_recommendations(cfg_data_dir, dt)
+    stats: dict[str, Any] = {
+        "date": dt.isoformat(),
+        "recommendations": len(recs),
+        "refreshed": 0,
+        "skipped_complete": 0,
+        "pending": 0,
+        "unmatched": 0,
+        "changed": False,
+    }
+    if not recs:
+        if not json_output and label:
+            click.echo(f"{label} {dt.isoformat()} 无推荐数据，跳过", err=True)
+        return stats
+
+    existing = _load_backtest_results(cfg_data_dir, dt)
+    by_key = {_result_key_from_result(item): item for item in existing}
+    last_progress_at = time.monotonic()
+
+    if not json_output and label:
+        click.echo(f"{label} {dt.isoformat()} 推荐 {len(recs)} 条", err=True)
+
+    for i, rec in enumerate(recs, start=1):
+        rec_dt = rec.message_time.date() if rec.message_time else dt
+        mature = mature_cache.get(rec_dt)
+        if mature is None:
+            mature = _mature_windows(rec_dt, as_of)
+            mature_cache[rec_dt] = mature
+        if not mature:
+            stats["pending"] += 1
+            last_progress_at = _emit_refresh_progress(
+                i,
+                len(recs),
+                stats["refreshed"],
+                stats["skipped_complete"],
+                stats["pending"],
+                stats["unmatched"],
+                json_output,
+                last_progress_at,
+            )
+            continue
+
+        key = ("message_id", rec.message_id)
+        legacy_key = _result_key_from_rec(rec)
+        old = by_key.get(key) or by_key.get(legacy_key)
+        missing = [w for w in mature if not old or f"ret_t{w}" not in old]
+        if not missing:
+            stats["skipped_complete"] += 1
+            last_progress_at = _emit_refresh_progress(
+                i,
+                len(recs),
+                stats["refreshed"],
+                stats["skipped_complete"],
+                stats["pending"],
+                stats["unmatched"],
+                json_output,
+                last_progress_at,
+            )
+            continue
+
+        if rec.ticker not in ticker_cache:
+            ticker_cache[rec.ticker] = _resolve_ticker(rec.ticker)
+        ts_code = ticker_cache[rec.ticker]
+        if not ts_code:
+            stats["unmatched"] += 1
+            last_progress_at = _emit_refresh_progress(
+                i,
+                len(recs),
+                stats["refreshed"],
+                stats["skipped_complete"],
+                stats["pending"],
+                stats["unmatched"],
+                json_output,
+                last_progress_at,
+            )
+            continue
+
+        rec_date = (
+            rec.message_time.strftime("%Y%m%d")
+            if rec.message_time
+            else dt.strftime("%Y%m%d")
+        )
+        result = _backtest_one(rec, ts_code, rec_date, as_of=as_of)
+        if result:
+            if legacy_key in by_key and key not in by_key:
+                del by_key[legacy_key]
+            by_key[key] = result
+            stats["refreshed"] += 1
+            stats["changed"] = True
+
+        last_progress_at = _emit_refresh_progress(
+            i,
+            len(recs),
+            stats["refreshed"],
+            stats["skipped_complete"],
+            stats["pending"],
+            stats["unmatched"],
+            json_output,
+            last_progress_at,
+        )
+
+    if stats["changed"]:
+        _save_backtest_results(
+            cfg_data_dir,
+            dt,
+            sorted(
+                by_key.values(),
+                key=lambda item: str(item.get("message_id", "")),
+            ),
+        )
+
+    if not json_output:
+        click.echo(
+            "  完成: "
+            f"更新 {stats['refreshed']}，完整跳过 {stats['skipped_complete']}，"
+            f"未成熟 {stats['pending']}，未匹配 {stats['unmatched']}",
+            err=True,
+        )
+    return stats
+
+
 def run_backtest_refresh(
     as_of_str: str,
     window_days: int,
@@ -382,123 +455,22 @@ def run_backtest_refresh(
             continue
 
         scanned_dates += 1
-        existing = _load_backtest_results(cfg.storage.data_dir, dt)
-        by_key = {_result_key_from_result(item): item for item in existing}
-        day_changed = False
-        day_refreshed = 0
-        day_skipped_complete = 0
-        day_pending = 0
-        day_unmatched = 0
-        last_progress_at = time.monotonic()
-
-        if not json_output:
-            click.echo(
-                f"[{offset + 1}/{window_days}] {dt.isoformat()} 推荐 {len(recs)} 条",
-                err=True,
-            )
-
-        for i, rec in enumerate(recs, start=1):
-            scanned_recs += 1
-            rec_dt = rec.message_time.date() if rec.message_time else dt
-            mature = mature_cache.get(rec_dt)
-            if mature is None:
-                mature = _mature_windows(rec_dt, as_of)
-                mature_cache[rec_dt] = mature
-            if not mature:
-                pending += 1
-                day_pending += 1
-                last_progress_at = _emit_refresh_progress(
-                    i,
-                    len(recs),
-                    day_refreshed,
-                    day_skipped_complete,
-                    day_pending,
-                    day_unmatched,
-                    json_output,
-                    last_progress_at,
-                )
-                continue
-
-            key = ("message_id", rec.message_id)
-            legacy_key = _result_key_from_rec(rec)
-            old = by_key.get(key) or by_key.get(legacy_key)
-            missing = [w for w in mature if not old or f"ret_t{w}" not in old]
-            if not missing:
-                skipped_complete += 1
-                day_skipped_complete += 1
-                last_progress_at = _emit_refresh_progress(
-                    i,
-                    len(recs),
-                    day_refreshed,
-                    day_skipped_complete,
-                    day_pending,
-                    day_unmatched,
-                    json_output,
-                    last_progress_at,
-                )
-                continue
-
-            if rec.ticker not in ticker_cache:
-                ticker_cache[rec.ticker] = _resolve_ticker(rec.ticker)
-            ts_code = ticker_cache[rec.ticker]
-            if not ts_code:
-                unmatched += 1
-                day_unmatched += 1
-                last_progress_at = _emit_refresh_progress(
-                    i,
-                    len(recs),
-                    day_refreshed,
-                    day_skipped_complete,
-                    day_pending,
-                    day_unmatched,
-                    json_output,
-                    last_progress_at,
-                )
-                continue
-
-            rec_date = (
-                rec.message_time.strftime("%Y%m%d")
-                if rec.message_time
-                else dt.strftime("%Y%m%d")
-            )
-            result = _backtest_one(rec, ts_code, rec_date, as_of=as_of)
-            if result:
-                if legacy_key in by_key and key not in by_key:
-                    del by_key[legacy_key]
-                by_key[key] = result
-                refreshed += 1
-                day_refreshed += 1
-                day_changed = True
-
-            last_progress_at = _emit_refresh_progress(
-                i,
-                len(recs),
-                day_refreshed,
-                day_skipped_complete,
-                day_pending,
-                day_unmatched,
-                json_output,
-                last_progress_at,
-            )
-
-        if day_changed:
-            _save_backtest_results(
-                cfg.storage.data_dir,
-                dt,
-                sorted(
-                    by_key.values(),
-                    key=lambda item: str(item.get("message_id", "")),
-                ),
-            )
+        day_stats = _refresh_one_day(
+            cfg.storage.data_dir,
+            dt,
+            as_of,
+            ticker_cache,
+            mature_cache,
+            json_output,
+            label=f"[{offset + 1}/{window_days}]",
+        )
+        scanned_recs += day_stats["recommendations"]
+        refreshed += day_stats["refreshed"]
+        skipped_complete += day_stats["skipped_complete"]
+        pending += day_stats["pending"]
+        unmatched += day_stats["unmatched"]
+        if day_stats["changed"]:
             changed_dates.add(dt)
-
-        if not json_output:
-            click.echo(
-                "  完成: "
-                f"更新 {day_refreshed}，完整跳过 {day_skipped_complete}，"
-                f"未成熟 {day_pending}，未匹配 {day_unmatched}",
-                err=True,
-            )
 
     payload = {
         "as_of": as_of.isoformat(),
