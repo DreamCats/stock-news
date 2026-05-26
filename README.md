@@ -1,6 +1,6 @@
 # stock-news (sn)
 
-投研信息流 CLI 工具。从微信消息采集 → LLM 分类/抽取 → 观点链归并 → 报告生成 → 行情回测，全链路沉淀在命令行里，人和 Agent 都能用。
+投研信息流 CLI 工具。从微信消息采集 → LLM 分类/抽取 → 观点链归并 → 行情回测 → 盘中策略快报，全链路沉淀在命令行里，人和 Agent 都能用。
 
 ## 安装
 
@@ -220,7 +220,7 @@ sn --json analyze show --date today
 ```
 微信 API → sn fetch → raw messages (JSON)
   → sn analyze classify → classified.json（5 类: recommendation/research/event/tool/noise）
-  → sn analyze extract  → recommendations.json（结构化推荐: ticker/action/strength/reasoning）
+  → sn analyze extract  → recommendations.json（结构化推荐: target_type/target_name/action/confidence/evidence）
   → sn analyze opinion  → opinions.json（观点链: new/reinforce/revise/reverse/withdraw）
   → sn workflow run     → 编排 20 分钟增量链路
   → sn strategy generate → strategy.md（盘中策略快报: 新增机会 + 共识 + 观点变化）
@@ -280,10 +280,10 @@ storage:
 
 - [x] P0：项目骨架 + 数据采集 + 去重
 - [x] P1：LLM 集成 + 消息分类/推荐抽取/观点链
-- [x] P1.5：HTML 报告生成（已从 CLI 入口移除，后续再议）
+- [x] P1.5：HTML 报告生成（已移除，主线改为 strategy）
 - [x] P2a：行情数据层（Tushare + SQLite 缓存）
 - [x] P2b：推荐人回测 + 胜率评分
-- [ ] P3：报告发布（阿里云 OSS）
+- [ ] P3：策略快报发布
 - [x] P4：定时调度
 - [ ] P5：Channel 推送
 - [x] P6a：盘中策略快报（确定性 strategy JSON + markdown）

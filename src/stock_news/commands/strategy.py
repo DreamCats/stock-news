@@ -19,6 +19,7 @@ from stock_news.models import OpinionNode, Recommendation
 
 BULLISH_ACTIONS = {"买入", "加仓", "关注"}
 BEARISH_ACTIONS = {"卖出", "减仓", "回避"}
+TRADE_TARGET_TYPE = "stock"
 STRENGTH_SCORE = {
     "强": 18,
     "高": 18,
@@ -127,6 +128,18 @@ def _action_side(action: str) -> str:
     return "neutral"
 
 
+def _target_type(rec: Recommendation) -> str:
+    return rec.target_type or TRADE_TARGET_TYPE
+
+
+def _target_name(rec: Recommendation) -> str:
+    return rec.target_name or rec.ticker
+
+
+def _target_key(rec: Recommendation) -> str:
+    return f"{_target_type(rec)}:{_target_name(rec)}"
+
+
 def _short_text(text: str | None, max_len: int = 80) -> str:
     if not text:
         return ""
@@ -141,12 +154,17 @@ def _build_recommendation_item(
     stat = sender_stats.get(rec.sender, {})
     return {
         "message_id": rec.message_id,
+        "target_type": _target_type(rec),
+        "target_name": _target_name(rec),
         "ticker": rec.ticker,
         "action": rec.action,
+        "raw_action": rec.raw_action,
         "strength": rec.strength,
+        "confidence": rec.confidence,
         "sender": rec.sender,
         "message_time": rec.message_time.isoformat() if rec.message_time else None,
         "reasoning": _short_text(rec.reasoning),
+        "evidence": _short_text(rec.evidence),
         "risk_note": _short_text(rec.risk_note),
         "sender_30d": {
             "count": stat.get("count"),
@@ -162,42 +180,51 @@ def _build_consensus(
     sender_stats: dict[str, dict[str, Any]],
     top: int,
 ) -> list[dict[str, Any]]:
-    by_ticker: dict[str, list[Recommendation]] = {}
+    by_target: dict[str, list[Recommendation]] = {}
     for rec in recs:
-        by_ticker.setdefault(rec.ticker, []).append(rec)
+        by_target.setdefault(_target_key(rec), []).append(rec)
 
     items: list[dict[str, Any]] = []
-    for ticker, ticker_recs in by_ticker.items():
-        senders = sorted({r.sender for r in ticker_recs})
-        actions = Counter(r.action for r in ticker_recs)
+    for target_key, target_recs in by_target.items():
+        first = target_recs[0]
+        senders = sorted({r.sender for r in target_recs})
+        actions = Counter(r.action for r in target_recs)
         latest = max(
-            (_rec_time(r, datetime.min) for r in ticker_recs),
+            (_rec_time(r, datetime.min) for r in target_recs),
             default=datetime.min,
         )
         avg_quality = sum(
-            _sender_quality(r.sender, sender_stats) for r in ticker_recs
-        ) / len(ticker_recs)
-        strength = max(_strength_score(r.strength) for r in ticker_recs)
-        score = round(len(senders) * 20 + avg_quality + strength, 2)
+            _sender_quality(r.sender, sender_stats) for r in target_recs
+        ) / len(target_recs)
+        avg_confidence = sum(r.confidence for r in target_recs) / len(target_recs)
+        strength = max(_strength_score(r.strength) for r in target_recs)
+        score = round(
+            len(senders) * 20 + avg_quality + strength + avg_confidence * 10,
+            2,
+        )
         reasons = [
-            _short_text(r.reasoning)
-            for r in ticker_recs
-            if _short_text(r.reasoning)
+            _short_text(r.reasoning) for r in target_recs if _short_text(r.reasoning)
         ][:3]
         risks = [
-            _short_text(r.risk_note)
-            for r in ticker_recs
-            if _short_text(r.risk_note)
+            _short_text(r.risk_note) for r in target_recs if _short_text(r.risk_note)
+        ][:3]
+        evidences = [
+            _short_text(r.evidence) for r in target_recs if _short_text(r.evidence)
         ][:3]
         items.append(
             {
-                "ticker": ticker,
+                "target_key": target_key,
+                "target_type": _target_type(first),
+                "target_name": _target_name(first),
+                "ticker": first.ticker,
                 "score": score,
                 "senders": senders,
-                "recommendation_count": len(ticker_recs),
+                "recommendation_count": len(target_recs),
                 "actions": dict(actions),
+                "confidence": round(avg_confidence, 3),
                 "latest_time": latest.isoformat() if latest != datetime.min else None,
                 "reasons": reasons,
+                "evidences": evidences,
                 "risks": risks,
             }
         )
@@ -225,6 +252,8 @@ def _build_opinion_changes(
             "stance": opinion.stance,
             "update_type": opinion.update_type,
             "summary": opinion.summary,
+            "confidence": opinion.confidence,
+            "candidate_existing_topic": opinion.candidate_existing_topic,
             "message_id": opinion.message_id,
         }
         for opinion in changes[-top:]
@@ -236,16 +265,44 @@ def _build_conflicts(
     opinions: list[OpinionNode],
     top: int,
 ) -> list[dict[str, Any]]:
-    by_ticker: dict[str, set[str]] = {}
+    by_target: dict[str, dict[str, Any]] = {}
     for rec in recs:
-        by_ticker.setdefault(rec.ticker, set()).add(_action_side(rec.action))
+        key = _target_name(rec)
+        item = by_target.setdefault(
+            key,
+            {
+                "target_key": _target_key(rec),
+                "target_type": _target_type(rec),
+                "target_name": _target_name(rec),
+                "sides": set(),
+            },
+        )
+        item["sides"].add(_action_side(rec.action))
     for opinion in opinions:
-        by_ticker.setdefault(opinion.topic_key, set()).add(opinion.stance)
+        key = opinion.topic_key
+        item = by_target.setdefault(
+            key,
+            {
+                "target_key": f"opinion:{opinion.topic_key}",
+                "target_type": "opinion",
+                "target_name": opinion.topic_key,
+                "sides": set(),
+            },
+        )
+        item["sides"].add(opinion.stance)
 
     conflicts = []
-    for ticker, sides in by_ticker.items():
+    for item in by_target.values():
+        sides = item["sides"]
         if "bullish" in sides and "bearish" in sides:
-            conflicts.append({"ticker": ticker, "sides": sorted(sides)})
+            conflicts.append(
+                {
+                    "target_key": item["target_key"],
+                    "target_type": item["target_type"],
+                    "target_name": item["target_name"],
+                    "sides": sorted(sides),
+                }
+            )
     return conflicts[:top]
 
 
@@ -259,24 +316,64 @@ def _build_candidate_trades(
         changes_by_topic.setdefault(str(change["topic_key"]), []).append(change)
 
     candidates = []
-    for item in consensus[:top]:
+    for item in consensus:
+        if item["target_type"] != TRADE_TARGET_TYPE:
+            continue
+        sides = {_action_side(action) for action in item["actions"]}
+        if "bullish" not in sides:
+            continue
         why = [f"{item['recommendation_count']} 条推荐"]
         if len(item["senders"]) > 1:
             why.append(f"{len(item['senders'])} 位推荐人共识")
-        changes = changes_by_topic.get(str(item["ticker"]), [])
+        changes = changes_by_topic.get(str(item["target_name"]), [])
         if changes:
             why.extend(f"观点 {c['update_type']}" for c in changes[:2])
         candidates.append(
             {
+                "target_type": item["target_type"],
+                "target_name": item["target_name"],
                 "ticker": item["ticker"],
                 "score": item["score"],
+                "confidence": item["confidence"],
                 "why_selected": why,
                 "reasons": item["reasons"],
+                "evidences": item["evidences"],
                 "risks": item["risks"],
                 "senders": item["senders"],
             }
         )
+        if len(candidates) >= top:
+            break
     return candidates
+
+
+def _build_theme_clues(
+    consensus: list[dict[str, Any]],
+    top: int,
+) -> list[dict[str, Any]]:
+    clues: list[dict[str, Any]] = []
+    for item in consensus:
+        if item["target_type"] == TRADE_TARGET_TYPE:
+            continue
+        why = [f"{item['recommendation_count']} 条线索"]
+        if len(item["senders"]) > 1:
+            why.append(f"{len(item['senders'])} 位推荐人共识")
+        clues.append(
+            {
+                "target_type": item["target_type"],
+                "target_name": item["target_name"],
+                "score": item["score"],
+                "confidence": item["confidence"],
+                "why_selected": why,
+                "reasons": item["reasons"],
+                "evidences": item["evidences"],
+                "risks": item["risks"],
+                "senders": item["senders"],
+            }
+        )
+        if len(clues) >= top:
+            break
+    return clues
 
 
 def _build_payload(
@@ -315,6 +412,7 @@ def _build_payload(
     consensus = _build_consensus(new_recs, sender_stats, top)
     conflicts = _build_conflicts(new_recs, opinions, top)
     candidates = _build_candidate_trades(consensus, opinion_changes, top)
+    theme_clues = _build_theme_clues(consensus, top)
     involved_senders = sorted({rec.sender for rec in new_recs})
     involved_stats = {
         sender: sender_stats[sender]
@@ -339,6 +437,7 @@ def _build_payload(
         "conflicts": conflicts,
         "sender_stats": involved_stats,
         "candidate_trades": candidates,
+        "theme_clues": theme_clues,
     }
     next_state = {
         "generated_at": report_time.isoformat(timespec="seconds"),
@@ -371,38 +470,59 @@ def _render_markdown(payload: dict[str, Any]) -> str:
     if candidates:
         for item in candidates[:3]:
             why = "、".join(item["why_selected"])
-            lines.append(f"- {item['ticker']}：{why}，score={item['score']}")
+            lines.append(f"- {item['target_name']}：{why}，score={item['score']}")
     else:
-        lines.append("- 本轮暂无新增有效机会。")
+        lines.append("- 本轮暂无新增可交易个股机会。")
 
-    lines.extend(["", "## 新增机会"])
-    lines.append("| 标的 | 动作 | 推荐人 | 30d T+5胜率 | 样本 | 核心理由 | 风险 |")
-    lines.append("| --- | --- | --- | ---: | ---: | --- | --- |")
-    for rec in payload["new_recommendations"]:
+    theme_clues = payload["theme_clues"]
+    if theme_clues:
+        lines.append("")
+        lines.append("## 主题/板块线索")
+        for item in theme_clues:
+            why = "、".join(item["why_selected"])
+            reason = "；".join(item["reasons"] or item["evidences"])
+            lines.append(
+                f"- [{item['target_type']}] {item['target_name']}："
+                f"{why}，score={item['score']}，{reason or '-'}"
+            )
+
+    lines.extend(["", "## 新增可交易机会"])
+    lines.append("| 类型 | 标的 | 动作 | 推荐人 | 30d T+5胜率 | 样本 | 证据 | 风险 |")
+    lines.append("| --- | --- | --- | --- | ---: | ---: | --- | --- |")
+    trade_recs = [
+        rec
+        for rec in payload["new_recommendations"]
+        if rec["target_type"] == TRADE_TARGET_TYPE
+    ]
+    for rec in trade_recs:
         stat = rec["sender_30d"]
         lines.append(
             "| "
             + " | ".join(
                 [
-                    _cell(rec["ticker"]),
+                    _cell(rec["target_type"]),
+                    _cell(rec["target_name"]),
                     _cell(rec["action"]),
                     _cell(rec["sender"]),
                     _pct(stat.get("win_rate_t5")),
                     _cell(stat.get("count")),
-                    _cell(rec.get("reasoning")),
+                    _cell(rec.get("evidence") or rec.get("reasoning")),
                     _cell(rec.get("risk_note")),
                 ]
             )
             + " |"
         )
-    if not payload["new_recommendations"]:
-        lines.append("| - | - | - | - | - | 本轮无新增推荐 | - |")
+    if not trade_recs:
+        lines.append("| - | - | - | - | - | - | 本轮无新增可交易个股 | - |")
 
     lines.extend(["", "## 共识增强"])
     if payload["top_consensus"]:
         for item in payload["top_consensus"]:
             senders = "、".join(item["senders"])
-            lines.append(f"- {item['ticker']}：{senders}，score={item['score']}")
+            lines.append(
+                f"- [{item['target_type']}] {item['target_name']}："
+                f"{senders}，score={item['score']}"
+            )
     else:
         lines.append("- 本轮暂无多人共识。")
 
@@ -429,8 +549,10 @@ def _render_markdown(payload: dict[str, Any]) -> str:
 
     lines.extend(["", "## 原始线索"])
     for rec in payload["new_recommendations"][:5]:
-        clue = rec.get("reasoning") or rec.get("risk_note") or "-"
-        lines.append(f"- {rec['ticker']} / {rec['sender']}：{clue}")
+        clue = (
+            rec.get("evidence") or rec.get("reasoning") or rec.get("risk_note") or "-"
+        )
+        lines.append(f"- {rec['target_name']} / {rec['sender']}：{clue}")
     if not payload["new_recommendations"]:
         lines.append("- 无。")
 

@@ -114,11 +114,13 @@ sn workflow status --date today
 LLM 不直接吃全量文件。程序先聚合出高价值候选集：
 
 - 本轮新增推荐：按 `message_id` 或 strategy state 对比上一轮。
-- 标的共识：按 ticker 聚合推荐人数、推荐人、动作、强度、最新时间。
+- 标的共识：按 `target_type + target_name` 聚合推荐人数、推荐人、动作、强度、置信度、最新时间。
 - 推荐人可信度：关联近 30 天样本数、T+5 胜率、平均收益、超额收益。
 - 观点变化：从 opinions 中提取 `new/reinforce/revise/reverse/withdraw`。
-- 分歧：同一 ticker 出现相反动作或 stance。
-- 候选排序：共识人数、推荐强度、推荐人可信度、新鲜度、观点变化权重。
+- 分歧：同一标的/主题出现相反动作或 stance。
+- 候选排序：共识人数、推荐强度、抽取置信度、推荐人可信度、新鲜度、观点变化权重。
+- 可交易候选：只从 `target_type=stock` 的推荐中选出。
+- 主题/板块线索：`sector/theme/macro` 单独输出，不参与个股回测和交易候选排名。
 
 输出中间结构：
 
@@ -127,7 +129,8 @@ LLM 不直接吃全量文件。程序先聚合出高价值候选集：
   "date": "2026-05-25",
   "window": {"minutes": 20},
   "has_updates": true,
-  "top_candidates": [],
+  "candidate_trades": [],
+  "theme_clues": [],
   "consensus": [],
   "opinion_changes": [],
   "conflicts": [],
@@ -164,8 +167,11 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 - 每个结论说明触发原因和风险。
 
 ## 新增机会
-| 标的 | 动作 | 强度 | 推荐人 | 30d T+5胜率 | 样本 | 核心理由 |
-| --- | --- | --- | --- | ---: | ---: | --- |
+| 类型 | 标的 | 动作 | 推荐人 | 30d T+5胜率 | 样本 | 证据 | 风险 |
+| --- | --- | --- | --- | ---: | ---: | --- | --- |
+
+## 主题/板块线索
+- 不参与交易候选和回测，只作为方向观察。
 
 ## 共识增强
 - 多人推荐、同一推荐人观点强化的标的。
@@ -195,4 +201,4 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 - `opinion` 不展示推荐人胜率。
 - `delivery` 不做策略判断。
 - `strategy generate` 默认不跑 `backtest refresh`。
-- 不把 raw message 全文直接送给 report/strategy LLM。
+- 不把 raw message 全文直接送给 strategy LLM。

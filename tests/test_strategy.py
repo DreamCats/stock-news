@@ -16,14 +16,23 @@ def _write_json(path, payload) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def _rec(message_id: str, message_time: datetime) -> Recommendation:
+def _rec(
+    message_id: str,
+    message_time: datetime,
+    target_type: str = "stock",
+    target_name: str = "寒武纪",
+) -> Recommendation:
     return Recommendation(
         message_id=message_id,
         sender="张三",
         message_time=message_time,
+        target_type=target_type,
+        target_name=target_name,
         ticker="寒武纪",
         action="买入",
         strength="强",
+        confidence=0.9,
+        evidence="算力订单改善",
         reasoning="算力订单改善",
         risk_note="短期涨幅较大",
         raw_content="寒武纪算力订单改善，关注",
@@ -83,7 +92,9 @@ def test_strategy_generate_writes_payload_markdown_and_state(
     state_path = tmp_path / today / "strategy" / "state.json"
     saved = json.loads(strategy_json.read_text(encoding="utf-8"))
     assert saved["new_recommendations"][0]["ticker"] == "寒武纪"
+    assert saved["new_recommendations"][0]["target_type"] == "stock"
     assert saved["candidate_trades"][0]["ticker"] == "寒武纪"
+    assert saved["candidate_trades"][0]["target_name"] == "寒武纪"
     assert "盘中投研快报" in strategy_md.read_text(encoding="utf-8")
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["message_ids"] == ["msg-1"]
@@ -91,6 +102,47 @@ def test_strategy_generate_writes_payload_markdown_and_state(
     strategy.generate("today", 20, 5, json_output=True)
     payload = json.loads(capsys.readouterr().out)
     assert payload["data"]["has_updates"] is False
+
+
+def test_strategy_separates_stock_trades_from_theme_clues(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    today = date.today().isoformat()
+    now = datetime.now().replace(microsecond=0)
+    stock_rec = _rec("msg-1", now - timedelta(minutes=5))
+    theme_rec = _rec(
+        "msg-2",
+        now - timedelta(minutes=4),
+        target_type="theme",
+        target_name="国产算力",
+    )
+    _write_json(
+        tmp_path / today / "extracted" / "recommendations.json",
+        [stock_rec.model_dump(mode="json"), theme_rec.model_dump(mode="json")],
+    )
+    _write_json(tmp_path / today / "opinions" / "opinions.json", [])
+    monkeypatch.setattr(
+        strategy,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+
+    strategy.generate("today", 20, 5, json_output=True)
+    json.loads(capsys.readouterr().out)
+
+    saved = json.loads(
+        (tmp_path / today / "strategy" / "strategy.json").read_text(encoding="utf-8")
+    )
+    assert [item["target_name"] for item in saved["candidate_trades"]] == ["寒武纪"]
+    assert [item["target_name"] for item in saved["theme_clues"]] == ["国产算力"]
+
+    markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## 主题/板块线索" in markdown
+    assert "国产算力" in markdown
 
 
 def test_strategy_generate_cli(monkeypatch) -> None:
