@@ -118,6 +118,57 @@ def test_backtest_refresh_updates_missing_mature_windows(
     assert (backtest_dir / "sender_stats.json").exists()
 
 
+def test_backtest_refresh_reports_progress_and_caches_ticker(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    _write_recs(
+        tmp_path,
+        "2026-05-20",
+        [
+            _rec("rec-1", "2026-05-20"),
+            _rec("rec-2", "2026-05-20"),
+        ],
+    )
+
+    monkeypatch.setattr(
+        backtest,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(backtest, "_mature_windows", lambda rec_dt, as_of: [1])
+
+    resolved_tickers: list[str] = []
+
+    def fake_resolve_ticker(ticker: str) -> str:
+        resolved_tickers.append(ticker)
+        return "000001.SZ"
+
+    def fake_backtest_one(rec, ts_code, rec_date, as_of=None):
+        return {
+            "message_id": rec.message_id,
+            "sender": rec.sender,
+            "ticker": rec.ticker,
+            "action": rec.action,
+            "rec_date": rec_date,
+            "ret_t1": 0.01,
+            "win_t1": True,
+        }
+
+    monkeypatch.setattr(backtest, "_resolve_ticker", fake_resolve_ticker)
+    monkeypatch.setattr(backtest, "_backtest_one", fake_backtest_one)
+
+    backtest.run_backtest_refresh("2026-05-25", 6, json_output=False)
+
+    captured = capsys.readouterr()
+    assert "刷新回测: 2026-05-20 至 2026-05-25" in captured.err
+    assert "[1/6] 2026-05-20 推荐 2 条" in captured.err
+    assert "进度: 2/2" in captured.err
+    assert "刷新完成:" in captured.out
+    assert resolved_tickers == ["测试股份"]
+
+
 def test_backtest_refresh_cli(monkeypatch) -> None:
     calls: list[tuple[str, int, bool]] = []
     monkeypatch.setattr(

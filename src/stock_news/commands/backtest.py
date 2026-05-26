@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -27,15 +28,24 @@ def _parse_date(date_str: str) -> date:
 
 
 def _load_recommendations(data_dir: str, dt: date) -> list[Recommendation]:
-    path = Path(data_dir).expanduser() / dt.isoformat() / "extracted" / "recommendations.json"
+    path = (
+        Path(data_dir).expanduser()
+        / dt.isoformat()
+        / "extracted"
+        / "recommendations.json"
+    )
     if not path.exists():
         return []
-    return [Recommendation.model_validate(i) for i in json.loads(path.read_text(encoding="utf-8"))]
+    return [
+        Recommendation.model_validate(i)
+        for i in json.loads(path.read_text(encoding="utf-8"))
+    ]
 
 
 def _resolve_ticker(name: str) -> str | None:
     """股票名称 → ts_code，匹配不上返回 None."""
     from stock_news.common.market.db import get_ts_code
+
     return get_ts_code(name)
 
 
@@ -51,8 +61,7 @@ def _mature_windows(rec_dt: date, as_of: date) -> list[int]:
     return [
         w
         for w in WINDOWS
-        if w <= len(future_dates)
-        and future_dates[w - 1] <= as_of.strftime("%Y%m%d")
+        if w <= len(future_dates) and future_dates[w - 1] <= as_of.strftime("%Y%m%d")
     ]
 
 
@@ -97,7 +106,9 @@ def _backtest_one(
         bench_base_rows = fetch_index_daily(BENCHMARK, start_minus, rec_date)
     bench_base = bench_base_rows[-1]["close"] if bench_base_rows else None
 
-    bench_rows = fetch_index_daily(BENCHMARK, future_dates[0], end_date) if bench_base else []
+    bench_rows = (
+        fetch_index_daily(BENCHMARK, future_dates[0], end_date) if bench_base else []
+    )
     bench_map = {r["trade_date"]: r["close"] for r in bench_rows}
 
     bullish = _is_bullish(rec.action)
@@ -130,7 +141,9 @@ def _backtest_one(
 
         results[f"ret_t{w}"] = round(ret, 6)
         results[f"win_t{w}"] = win
-        results[f"bench_ret_t{w}"] = round(bench_ret, 6) if bench_ret is not None else None
+        results[f"bench_ret_t{w}"] = (
+            round(bench_ret, 6) if bench_ret is not None else None
+        )
         results[f"excess_t{w}"] = round(excess, 6) if excess is not None else None
 
     return results
@@ -161,12 +174,20 @@ def run_backtest(date_str: str, json_output: bool) -> None:
             if rec.ticker not in skipped_tickers:
                 skipped_tickers.append(rec.ticker)
             continue
-        rec_date = rec.message_time.strftime("%Y%m%d") if rec.message_time else dt.strftime("%Y%m%d")
+        rec_date = (
+            rec.message_time.strftime("%Y%m%d")
+            if rec.message_time
+            else dt.strftime("%Y%m%d")
+        )
         resolved_items.append((rec, ts_code))
 
     if not json_output:
         n_tickers = len(set(ts for _, ts in resolved_items))
-        click.echo(f"  匹配: {len(resolved_items)} 条 ({n_tickers} 个标的), 跳过: {len(skipped_tickers)} 个", err=True)
+        click.echo(
+            f"  匹配: {len(resolved_items)} 条 ({n_tickers} 个标的), "
+            f"跳过: {len(skipped_tickers)} 个",
+            err=True,
+        )
         if skipped_tickers:
             click.echo(f"  未匹配: {', '.join(skipped_tickers[:15])}", err=True)
 
@@ -178,7 +199,11 @@ def run_backtest(date_str: str, json_output: bool) -> None:
     total = len(resolved_items)
 
     for i, (rec, ts_code) in enumerate(resolved_items):
-        rec_date = rec.message_time.strftime("%Y%m%d") if rec.message_time else dt.strftime("%Y%m%d")
+        rec_date = (
+            rec.message_time.strftime("%Y%m%d")
+            if rec.message_time
+            else dt.strftime("%Y%m%d")
+        )
         result = _backtest_one(rec, ts_code, rec_date)
         if result:
             bt_results.append(result)
@@ -201,22 +226,33 @@ def run_backtest(date_str: str, json_output: bool) -> None:
     out_dir = Path(cfg.storage.data_dir).expanduser() / dt.isoformat() / "backtest"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "results.json"
-    out_path.write_text(json.dumps(bt_results, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps(bt_results, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     sender_stats = _aggregate_by_sender(bt_results)
 
     stats_path = out_dir / "sender_stats.json"
-    stats_path.write_text(json.dumps(sender_stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    stats_path.write_text(
+        json.dumps(sender_stats, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     if json_output:
-        click.echo(json.dumps({"results": len(bt_results), "sender_stats": sender_stats}, ensure_ascii=False))
+        click.echo(
+            json.dumps(
+                {"results": len(bt_results), "sender_stats": sender_stats},
+                ensure_ascii=False,
+            )
+        )
     else:
         click.echo(f"\n回测完成: {len(bt_results)} 条有效结果")
         click.echo(f"结果保存: {out_path}")
 
         header = f"{'推荐人':<16} {'次数':>4} "
         for w in WINDOWS:
-            header += f" {'T+'+str(w)+' 胜率':>9}"
+            header += f" {'T+' + str(w) + ' 胜率':>9}"
         header += f" {'T+5 均收益':>10} {'T+5 超额':>9}"
         click.echo(f"\n{header}")
         click.echo("-" * len(header.encode("gbk", errors="replace")))
@@ -225,11 +261,11 @@ def run_backtest(date_str: str, json_output: bool) -> None:
             line = f"{s['sender']:<16} {s['count']:>4} "
             for w in WINDOWS:
                 wr = s.get(f"win_rate_t{w}")
-                line += f" {wr*100:>8.1f}%" if wr is not None else f" {'--':>9}"
+                line += f" {wr * 100:>8.1f}%" if wr is not None else f" {'--':>9}"
             avg = s.get("avg_ret_t5")
             exc = s.get("avg_excess_t5")
-            line += f" {avg*100:>9.2f}%" if avg is not None else f" {'--':>10}"
-            line += f" {exc*100:>8.2f}%" if exc is not None else f" {'--':>9}"
+            line += f" {avg * 100:>9.2f}%" if avg is not None else f" {'--':>10}"
+            line += f" {exc * 100:>8.2f}%" if exc is not None else f" {'--':>9}"
             click.echo(line)
 
 
@@ -283,6 +319,32 @@ def _save_backtest_results(
     )
 
 
+def _emit_refresh_progress(
+    done: int,
+    total: int,
+    refreshed: int,
+    skipped_complete: int,
+    pending: int,
+    unmatched: int,
+    json_output: bool,
+    last_progress_at: float,
+) -> float:
+    if json_output:
+        return last_progress_at
+
+    now = time.monotonic()
+    if done < total and done % 500 != 0 and now - last_progress_at < 10:
+        return last_progress_at
+
+    click.echo(
+        "  进度: "
+        f"{done}/{total}，更新 {refreshed}，完整跳过 {skipped_complete}，"
+        f"未成熟 {pending}，未匹配 {unmatched}",
+        err=True,
+    )
+    return now
+
+
 def run_backtest_refresh(
     as_of_str: str,
     window_days: int,
@@ -299,6 +361,8 @@ def run_backtest_refresh(
     pending = 0
     unmatched = 0
     changed_dates: set[date] = set()
+    ticker_cache: dict[str, str | None] = {}
+    mature_cache: dict[date, list[int]] = {}
 
     if not json_output:
         click.echo(
@@ -310,19 +374,49 @@ def run_backtest_refresh(
         dt = start_date + timedelta(days=offset)
         recs = _load_recommendations(cfg.storage.data_dir, dt)
         if not recs:
+            if not json_output:
+                click.echo(
+                    f"[{offset + 1}/{window_days}] {dt.isoformat()} 无推荐数据，跳过",
+                    err=True,
+                )
             continue
 
         scanned_dates += 1
         existing = _load_backtest_results(cfg.storage.data_dir, dt)
         by_key = {_result_key_from_result(item): item for item in existing}
         day_changed = False
+        day_refreshed = 0
+        day_skipped_complete = 0
+        day_pending = 0
+        day_unmatched = 0
+        last_progress_at = time.monotonic()
 
-        for rec in recs:
+        if not json_output:
+            click.echo(
+                f"[{offset + 1}/{window_days}] {dt.isoformat()} 推荐 {len(recs)} 条",
+                err=True,
+            )
+
+        for i, rec in enumerate(recs, start=1):
             scanned_recs += 1
             rec_dt = rec.message_time.date() if rec.message_time else dt
-            mature = _mature_windows(rec_dt, as_of)
+            mature = mature_cache.get(rec_dt)
+            if mature is None:
+                mature = _mature_windows(rec_dt, as_of)
+                mature_cache[rec_dt] = mature
             if not mature:
                 pending += 1
+                day_pending += 1
+                last_progress_at = _emit_refresh_progress(
+                    i,
+                    len(recs),
+                    day_refreshed,
+                    day_skipped_complete,
+                    day_pending,
+                    day_unmatched,
+                    json_output,
+                    last_progress_at,
+                )
                 continue
 
             key = ("message_id", rec.message_id)
@@ -331,11 +425,35 @@ def run_backtest_refresh(
             missing = [w for w in mature if not old or f"ret_t{w}" not in old]
             if not missing:
                 skipped_complete += 1
+                day_skipped_complete += 1
+                last_progress_at = _emit_refresh_progress(
+                    i,
+                    len(recs),
+                    day_refreshed,
+                    day_skipped_complete,
+                    day_pending,
+                    day_unmatched,
+                    json_output,
+                    last_progress_at,
+                )
                 continue
 
-            ts_code = _resolve_ticker(rec.ticker)
+            if rec.ticker not in ticker_cache:
+                ticker_cache[rec.ticker] = _resolve_ticker(rec.ticker)
+            ts_code = ticker_cache[rec.ticker]
             if not ts_code:
                 unmatched += 1
+                day_unmatched += 1
+                last_progress_at = _emit_refresh_progress(
+                    i,
+                    len(recs),
+                    day_refreshed,
+                    day_skipped_complete,
+                    day_pending,
+                    day_unmatched,
+                    json_output,
+                    last_progress_at,
+                )
                 continue
 
             rec_date = (
@@ -349,7 +467,19 @@ def run_backtest_refresh(
                     del by_key[legacy_key]
                 by_key[key] = result
                 refreshed += 1
+                day_refreshed += 1
                 day_changed = True
+
+            last_progress_at = _emit_refresh_progress(
+                i,
+                len(recs),
+                day_refreshed,
+                day_skipped_complete,
+                day_pending,
+                day_unmatched,
+                json_output,
+                last_progress_at,
+            )
 
         if day_changed:
             _save_backtest_results(
@@ -361,6 +491,14 @@ def run_backtest_refresh(
                 ),
             )
             changed_dates.add(dt)
+
+        if not json_output:
+            click.echo(
+                "  完成: "
+                f"更新 {day_refreshed}，完整跳过 {day_skipped_complete}，"
+                f"未成熟 {day_pending}，未匹配 {day_unmatched}",
+                err=True,
+            )
 
     payload = {
         "as_of": as_of.isoformat(),
@@ -396,9 +534,7 @@ def run_backtest_summary(
     data_root = Path(cfg.storage.data_dir).expanduser()
     end_date = date.today()
     start_date = (
-        end_date - timedelta(days=window_days)
-        if window_days is not None
-        else None
+        end_date - timedelta(days=window_days) if window_days is not None else None
     )
 
     all_results: list[dict[str, Any]] = []
@@ -497,7 +633,7 @@ def run_backtest_summary(
 
         header = f"{'推荐人':<16} {'次数':>4} "
         for w in WINDOWS:
-            header += f" {'T+'+str(w)+' 胜率':>9}"
+            header += f" {'T+' + str(w) + ' 胜率':>9}"
         header += f" {'T+5 均收益':>10} {'T+5 超额':>9}"
         click.echo(f"\n{header}")
         click.echo("-" * len(header.encode("gbk", errors="replace")))
@@ -506,11 +642,11 @@ def run_backtest_summary(
             line = f"{s['sender']:<16} {s['count']:>4} "
             for w in WINDOWS:
                 wr = s.get(f"win_rate_t{w}")
-                line += f" {wr*100:>8.1f}%" if wr is not None else f" {'--':>9}"
+                line += f" {wr * 100:>8.1f}%" if wr is not None else f" {'--':>9}"
             avg = s.get("avg_ret_t5")
             exc = s.get("avg_excess_t5")
-            line += f" {avg*100:>9.2f}%" if avg is not None else f" {'--':>10}"
-            line += f" {exc*100:>8.2f}%" if exc is not None else f" {'--':>9}"
+            line += f" {avg * 100:>9.2f}%" if avg is not None else f" {'--':>10}"
+            line += f" {exc * 100:>8.2f}%" if exc is not None else f" {'--':>9}"
             click.echo(line)
 
         click.echo(f"\n结果保存: {stats_path}")
@@ -527,7 +663,9 @@ def _aggregate_by_sender(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for w in WINDOWS:
             wins = [r[f"win_t{w}"] for r in items if f"win_t{w}" in r]
             rets = [r[f"ret_t{w}"] for r in items if f"ret_t{w}" in r]
-            excess = [r[f"excess_t{w}"] for r in items if r.get(f"excess_t{w}") is not None]
+            excess = [
+                r[f"excess_t{w}"] for r in items if r.get(f"excess_t{w}") is not None
+            ]
             if wins:
                 s[f"win_rate_t{w}"] = round(sum(wins) / len(wins), 4)
                 s[f"avg_ret_t{w}"] = round(sum(rets) / len(rets), 6)
@@ -535,5 +673,8 @@ def _aggregate_by_sender(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 s[f"avg_excess_t{w}"] = round(sum(excess) / len(excess), 6)
         stats.append(s)
 
-    stats.sort(key=lambda x: (x.get("win_rate_t5") or 0, x.get("count", 0)), reverse=True)
+    stats.sort(
+        key=lambda x: (x.get("win_rate_t5") or 0, x.get("count", 0)),
+        reverse=True,
+    )
     return stats
