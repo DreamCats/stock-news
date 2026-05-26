@@ -72,6 +72,17 @@ fetch
 → delivery send
 ```
 
+当前入口：
+
+```bash
+sn workflow run --date today --window-minutes 20
+sn workflow run --execute --delivery-route boss
+sn workflow status --date today
+```
+
+`workflow run` 默认 dry-run；加 `--execute` 后才执行真实 API / LLM / 行情 / delivery。
+不传 delivery 参数时只生成策略快报。
+
 其中：
 
 - `fetch` 用当天窗口加去重，避免漏消息。

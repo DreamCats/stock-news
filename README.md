@@ -51,6 +51,7 @@ sn analyze classify --date today     # 消息分类
 sn analyze extract --date today      # 推荐抽取
 sn analyze opinion --date today      # 观点链归并
 sn strategy generate --date today    # 生成盘中策略快报
+sn workflow run --execute            # 执行一次盘中增量 workflow
 
 # 4. 行情数据（回测准备）
 sn market set-token <TUSHARE_TOKEN>
@@ -118,6 +119,18 @@ sn strategy generate --date today --window-minutes 20 --top 5
 ~/.config/stock-news/data/<date>/strategy/strategy.json
 ~/.config/stock-news/data/<date>/strategy/strategy.md
 ```
+
+### 盘中编排 `sn workflow`
+
+```bash
+sn workflow run --date today --window-minutes 20
+sn workflow run --execute --delivery-route boss
+sn workflow status --date today
+```
+
+`workflow run` 默认 dry-run，只展示将执行的步骤；加 `--execute` 后才会真实执行：
+`fetch → classify → extract → opinion → backtest refresh → backtest summary → strategy generate → delivery`。
+不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送。
 
 ### LLM 管理 `sn llm`
 
@@ -209,6 +222,7 @@ sn --json analyze show --date today
   → sn analyze classify → classified.json（5 类: recommendation/research/event/tool/noise）
   → sn analyze extract  → recommendations.json（结构化推荐: ticker/action/strength/reasoning）
   → sn analyze opinion  → opinions.json（观点链: new/reinforce/revise/reverse/withdraw）
+  → sn workflow run     → 编排 20 分钟增量链路
   → sn strategy generate → strategy.md（盘中策略快报: 新增机会 + 共识 + 观点变化）
 
 Tushare → sn market → SQLite 缓存 → 回测引擎（TODO）
@@ -258,6 +272,7 @@ storage:
         ├── classified/      # 分类结果
         ├── extracted/       # 推荐抽取
         ├── opinions/        # 观点链
+        ├── workflow/        # workflow 最近一次运行状态
         └── strategy/         # 策略快报 JSON / Markdown / state
 ```
 
@@ -272,7 +287,7 @@ storage:
 - [x] P4：定时调度
 - [ ] P5：Channel 推送
 - [x] P6a：盘中策略快报（确定性 strategy JSON + markdown）
-- [ ] P6b：20 分钟 workflow 串联与发送
+- [x] P6b：20 分钟 workflow 串联与发送
 
 详见 [技术方案](docs/cli-technical-design.md) 和 [实施计划](docs/implementation-plan.md)。
 策略快报设计见 [策略快报 Workflow](docs/strategy-workflow.md)。
