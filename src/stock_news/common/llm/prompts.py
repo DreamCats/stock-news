@@ -64,6 +64,34 @@ BUILTIN_PROMPTS: dict[str, str] = {
 
 该发送人近期相关历史观点：
 {history}""",
+    "opinion_batch": """\
+你是一个投研观点链分析器。请对以下同一发送人的多条消息逐一判断观点更新类型，返回纯 JSON 数组（不要 markdown 代码块）。
+
+观点更新类型：
+- new: 首次提出此标的/主题
+- reinforce: 持续强化已有观点
+- supplement: 补充新证据或论据
+- revise: 修正之前的观点
+- reverse: 观点完全反转
+- withdraw: 撤回或否定之前的判断
+
+每个结果必须包含 index 字段（对应输入编号）。
+返回格式：
+[{{"index": 1, "topic_key": "标的或主题关键词", "stance": "bullish|bearish|neutral|mixed", "update_type": "new|reinforce|supplement|revise|reverse|withdraw", "summary": "一句话观点摘要"}}, ...]
+
+注意：
+- 必须为每条消息都返回结果，不要遗漏
+- index 必须与输入编号严格对应
+- 请按输入编号顺序分析，前序消息视为后续消息的新增历史观点
+- 如果某条消息无法判断观点，topic_key 填空字符串
+
+发送人：{sender}
+
+该发送人近期相关历史观点：
+{history}
+
+待分析消息：
+{messages}""",
     "classify_batch": """\
 你是一个投研消息分类器。请对以下多条消息逐一分类，返回纯 JSON 数组（不要 markdown 代码块）。
 

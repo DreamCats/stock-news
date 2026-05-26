@@ -50,7 +50,8 @@ sn fetch --source all --last 30m
 sn analyze classify --date today     # 消息分类
 sn analyze extract --date today      # 推荐抽取
 sn analyze opinion --date today      # 观点链归并
-sn analyze report --date today       # 生成 HTML 报告
+sn strategy generate --date today    # 生成盘中策略快报
+sn workflow run --execute            # 执行一次盘中增量 workflow
 
 # 4. 行情数据（回测准备）
 sn market set-token <TUSHARE_TOKEN>
@@ -70,6 +71,16 @@ sn fetch --source 个人群 --last 2h
 sn fetch --source all --date today --time-range 09:00-23:00
 ```
 
+### 历史补齐 `sn backfill`
+
+```bash
+sn backfill --days 30 --end-date today --time-range 09:00-23:00
+sn backfill --days 30 --dry-run
+```
+
+按日期从旧到新顺序执行 `fetch → classify → extract → opinion`。
+各阶段复用已有增量语义：已缓存的 fetch 切片会跳过，已处理的消息不会重复分类、抽取或归并观点。
+
 ### 数据查询 `sn data`
 
 ```bash
@@ -88,14 +99,38 @@ sn analyze classify --date today --no-llm  # 规则降级
 sn analyze extract --date today            # 推荐抽取（增量）
 sn analyze opinion --date today            # 观点链归并（按发送人并行）
 sn analyze show --date today               # 查看分析摘要
-sn analyze report --date today             # 生成 HTML 报告（含 LLM 摘要 + 逻辑归纳）
-sn analyze report --date today -o ~/report.html  # 指定输出路径
 sn analyze backtest --date today           # 回测单日推荐表现
-sn analyze backtest-summary --window-days 30 --min-count 3 --top 20  # 近 30 天推荐人胜率
+sn analyze backtest refresh --as-of today --window-days 30  # 补齐已成熟 T+N 回测窗口
+sn analyze backtest summary --window-days 30 --min-count 3 --top 20  # 近 30 天推荐人胜率
 ```
 
 分析流水线为增量设计：classify 和 extract 只处理新消息，重复运行不会重复消耗 LLM。
 推荐人胜率汇总默认只看滚动近 30 天，避免历史擅长阶段稀释近期有效性；如需历史累计，可加 `--all`。
+
+### 策略快报 `sn strategy`
+
+```bash
+sn strategy generate --date today --window-minutes 20 --top 5
+```
+
+默认生成结构化输入和可投递 Markdown：
+
+```text
+~/.config/stock-news/data/<date>/strategy/strategy.json
+~/.config/stock-news/data/<date>/strategy/strategy.md
+```
+
+### 盘中编排 `sn workflow`
+
+```bash
+sn workflow run --date today --window-minutes 20
+sn workflow run --execute --delivery-route boss
+sn workflow status --date today
+```
+
+`workflow run` 默认 dry-run，只展示将执行的步骤；加 `--execute` 后才会真实执行：
+`fetch → classify → extract → opinion → backtest refresh → backtest summary → strategy generate → delivery`。
+不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送。
 
 ### LLM 管理 `sn llm`
 
@@ -108,7 +143,7 @@ sn llm chat "你好"                   # 直接对话（调试）
 sn llm route classify deepseek       # 按任务路由到不同 provider
 ```
 
-支持任意 OpenAI 兼容接口。可按任务（classify/extract/opinion/report）路由到不同 provider。
+支持任意 OpenAI 兼容接口。可按任务（classify/extract/opinion）路由到不同 provider。
 
 ### 行情数据 `sn market`
 
@@ -130,7 +165,7 @@ sn config set api.timeout 60
 sn config set storage.data_dir ~/my-data
 ```
 
-### 定时调度 `sn schedule` / `sn sched`
+### 定时调度 `sn schedule`
 
 ```bash
 sn schedule install                  # 安装 launchd 10 分钟 tick
@@ -145,7 +180,6 @@ sn schedule uninstall
 
 配置文件在 `~/.config/stock-news/schedule.yaml`。首次运行会生成空配置，
 默认不预置任何会打 API 的 job；需要手动填 `jobs` 后再安装或 tick。
-`sn sched` 是 `sn schedule` 的短别名，适合日常少敲几个字。
 
 持续运行的盘中任务建议把采集和分析拆开：采集每 20 分钟跑当天
 `09:00-23:00` 的窗口；分析继续使用 `--date today`，第二天会自动滚动。
@@ -166,7 +200,7 @@ jobs:
     timeout: 20m
 
   - id: backtest-daily
-    command: cd /path/to/stock-news && uv run sn analyze backtest --date today
+    command: cd /path/to/stock-news && uv run sn analyze backtest refresh --as-of today --window-days 30
     at: "16:30"
     timeout: 20m
 ```
@@ -188,7 +222,8 @@ sn --json analyze show --date today
   → sn analyze classify → classified.json（5 类: recommendation/research/event/tool/noise）
   → sn analyze extract  → recommendations.json（结构化推荐: ticker/action/strength/reasoning）
   → sn analyze opinion  → opinions.json（观点链: new/reinforce/revise/reverse/withdraw）
-  → sn analyze report   → daily-report.html（老板视角报告: 摘要 + 标的逻辑 + 推荐人）
+  → sn workflow run     → 编排 20 分钟增量链路
+  → sn strategy generate → strategy.md（盘中策略快报: 新增机会 + 共识 + 观点变化）
 
 Tushare → sn market → SQLite 缓存 → 回测引擎（TODO）
 ```
@@ -237,21 +272,25 @@ storage:
         ├── classified/      # 分类结果
         ├── extracted/       # 推荐抽取
         ├── opinions/        # 观点链
-        └── report/          # HTML 报告
+        ├── workflow/        # workflow 最近一次运行状态
+        └── strategy/         # 策略快报 JSON / Markdown / state
 ```
 
 ## 路线图
 
 - [x] P0：项目骨架 + 数据采集 + 去重
 - [x] P1：LLM 集成 + 消息分类/推荐抽取/观点链
-- [x] P1.5：HTML 报告生成（LLM 摘要 + 逻辑归纳）
+- [x] P1.5：HTML 报告生成（已从 CLI 入口移除，后续再议）
 - [x] P2a：行情数据层（Tushare + SQLite 缓存）
 - [x] P2b：推荐人回测 + 胜率评分
 - [ ] P3：报告发布（阿里云 OSS）
 - [x] P4：定时调度
 - [ ] P5：Channel 推送
+- [x] P6a：盘中策略快报（确定性 strategy JSON + markdown）
+- [x] P6b：20 分钟 workflow 串联与发送
 
 详见 [技术方案](docs/cli-technical-design.md) 和 [实施计划](docs/implementation-plan.md)。
+策略快报设计见 [策略快报 Workflow](docs/strategy-workflow.md)。
 
 ## 开发
 

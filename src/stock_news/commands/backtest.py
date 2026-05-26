@@ -7,6 +7,7 @@ import sys
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -42,11 +43,25 @@ def _is_bullish(action: str) -> bool:
     return action in ("买入", "加仓", "关注")
 
 
+def _mature_windows(rec_dt: date, as_of: date) -> list[int]:
+    """返回 as_of 当天已经成熟的 T+N 窗口."""
+    from stock_news.common.market.db import get_next_n_trade_dates
+
+    future_dates = get_next_n_trade_dates(rec_dt, max(WINDOWS))
+    return [
+        w
+        for w in WINDOWS
+        if w <= len(future_dates)
+        and future_dates[w - 1] <= as_of.strftime("%Y%m%d")
+    ]
+
+
 def _backtest_one(
     rec: Recommendation,
     ts_code: str,
     rec_date: str,
-) -> dict | None:
+    as_of: date | None = None,
+) -> dict[str, Any] | None:
     """对单条推荐做回测，返回各窗口收益率."""
     from stock_news.common.market.db import get_next_n_trade_dates
     from stock_news.common.market.tushare_client import fetch_daily, fetch_index_daily
@@ -64,7 +79,15 @@ def _backtest_one(
     if not future_dates:
         return None
 
-    end_date = future_dates[-1]
+    if as_of is not None:
+        mature = _mature_windows(rec_dt, as_of)
+        if not mature:
+            return None
+    else:
+        mature = WINDOWS
+
+    max_window = max(mature)
+    end_date = future_dates[max_window - 1]
     future_rows = fetch_daily(ts_code, future_dates[0], end_date)
     price_map = {r["trade_date"]: r["close"] for r in future_rows}
 
@@ -79,6 +102,7 @@ def _backtest_one(
 
     bullish = _is_bullish(rec.action)
     results: dict[str, object] = {
+        "message_id": rec.message_id,
         "ts_code": ts_code,
         "ticker": rec.ticker,
         "sender": rec.sender,
@@ -88,7 +112,7 @@ def _backtest_one(
         "base_close": base_close,
     }
 
-    for w in WINDOWS:
+    for w in mature:
         if w > len(future_dates):
             break
         target_date = future_dates[w - 1]
@@ -126,7 +150,7 @@ def run_backtest(date_str: str, json_output: bool) -> None:
 
     # -- 阶段 1: 名称→代码映射 --
     if not json_output:
-        click.echo(f"\n[1/3] 名称→代码映射...", err=True)
+        click.echo("\n[1/3] 名称→代码映射...", err=True)
 
     resolved_items: list[tuple[Recommendation, str]] = []
     skipped_tickers: list[str] = []
@@ -148,9 +172,9 @@ def run_backtest(date_str: str, json_output: bool) -> None:
 
     # -- 阶段 2: 拉取行情数据 --
     if not json_output:
-        click.echo(f"\n[2/3] 拉取行情数据 (本地有缓存则跳过)...", err=True)
+        click.echo("\n[2/3] 拉取行情数据 (本地有缓存则跳过)...", err=True)
 
-    bt_results: list[dict] = []
+    bt_results: list[dict[str, Any]] = []
     total = len(resolved_items)
 
     for i, (rec, ts_code) in enumerate(resolved_items):
@@ -172,7 +196,7 @@ def run_backtest(date_str: str, json_output: bool) -> None:
 
     # -- 阶段 3: 聚合统计 --
     if not json_output:
-        click.echo(f"\n[3/3] 聚合推荐人统计...", err=True)
+        click.echo("\n[3/3] 聚合推荐人统计...", err=True)
 
     out_dir = Path(cfg.storage.data_dir).expanduser() / dt.isoformat() / "backtest"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -209,6 +233,158 @@ def run_backtest(date_str: str, json_output: bool) -> None:
             click.echo(line)
 
 
+def _result_key_from_rec(rec: Recommendation) -> tuple[str, ...]:
+    rec_date = rec.message_time.strftime("%Y%m%d") if rec.message_time else ""
+    return ("legacy", rec.sender, rec.ticker, rec.action, rec_date)
+
+
+def _result_key_from_result(item: dict[str, Any]) -> tuple[str, ...]:
+    message_id = item.get("message_id")
+    if message_id:
+        return ("message_id", str(message_id))
+    return (
+        "legacy",
+        str(item.get("sender", "")),
+        str(item.get("ticker", "")),
+        str(item.get("action", "")),
+        str(item.get("rec_date", "")),
+    )
+
+
+def _load_backtest_results(data_dir: str, dt: date) -> list[dict[str, Any]]:
+    path = Path(data_dir).expanduser() / dt.isoformat() / "backtest" / "results.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _save_backtest_results(
+    data_dir: str,
+    dt: date,
+    results: list[dict[str, Any]],
+) -> None:
+    out_dir = Path(data_dir).expanduser() / dt.isoformat() / "backtest"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "results.json"
+    out_path.write_text(
+        json.dumps(results, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    sender_stats = _aggregate_by_sender(results)
+    stats_path = out_dir / "sender_stats.json"
+    stats_path.write_text(
+        json.dumps(sender_stats, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def run_backtest_refresh(
+    as_of_str: str,
+    window_days: int,
+    json_output: bool,
+) -> None:
+    """刷新过去 N 天推荐里已经成熟的 T+N 回测窗口."""
+    cfg = load()
+    as_of = _parse_date(as_of_str)
+    start_date = as_of - timedelta(days=window_days - 1)
+    scanned_dates = 0
+    scanned_recs = 0
+    refreshed = 0
+    skipped_complete = 0
+    pending = 0
+    unmatched = 0
+    changed_dates: set[date] = set()
+
+    if not json_output:
+        click.echo(
+            f"刷新回测: {start_date.isoformat()} 至 {as_of.isoformat()}",
+            err=True,
+        )
+
+    for offset in range(window_days):
+        dt = start_date + timedelta(days=offset)
+        recs = _load_recommendations(cfg.storage.data_dir, dt)
+        if not recs:
+            continue
+
+        scanned_dates += 1
+        existing = _load_backtest_results(cfg.storage.data_dir, dt)
+        by_key = {_result_key_from_result(item): item for item in existing}
+        day_changed = False
+
+        for rec in recs:
+            scanned_recs += 1
+            rec_dt = rec.message_time.date() if rec.message_time else dt
+            mature = _mature_windows(rec_dt, as_of)
+            if not mature:
+                pending += 1
+                continue
+
+            key = ("message_id", rec.message_id)
+            legacy_key = _result_key_from_rec(rec)
+            old = by_key.get(key) or by_key.get(legacy_key)
+            missing = [w for w in mature if not old or f"ret_t{w}" not in old]
+            if not missing:
+                skipped_complete += 1
+                continue
+
+            ts_code = _resolve_ticker(rec.ticker)
+            if not ts_code:
+                unmatched += 1
+                continue
+
+            rec_date = (
+                rec.message_time.strftime("%Y%m%d")
+                if rec.message_time
+                else dt.strftime("%Y%m%d")
+            )
+            result = _backtest_one(rec, ts_code, rec_date, as_of=as_of)
+            if result:
+                if legacy_key in by_key and key not in by_key:
+                    del by_key[legacy_key]
+                by_key[key] = result
+                refreshed += 1
+                day_changed = True
+
+        if day_changed:
+            _save_backtest_results(
+                cfg.storage.data_dir,
+                dt,
+                sorted(
+                    by_key.values(),
+                    key=lambda item: str(item.get("message_id", "")),
+                ),
+            )
+            changed_dates.add(dt)
+
+    payload = {
+        "as_of": as_of.isoformat(),
+        "window_days": window_days,
+        "scanned_dates": scanned_dates,
+        "scanned_recommendations": scanned_recs,
+        "refreshed": refreshed,
+        "skipped_complete": skipped_complete,
+        "pending": pending,
+        "unmatched": unmatched,
+        "changed_dates": [d.isoformat() for d in sorted(changed_dates)],
+    }
+
+    if json_output:
+        click.echo(json.dumps(payload, ensure_ascii=False))
+    else:
+        click.echo(
+            "刷新完成: "
+            f"扫描 {scanned_dates} 天 / {scanned_recs} 条，"
+            f"更新 {refreshed} 条，完整跳过 {skipped_complete} 条，"
+            f"未成熟 {pending} 条，未匹配 {unmatched} 条"
+        )
+
+
 def run_backtest_summary(
     json_output: bool,
     top: int | None = None,
@@ -225,7 +401,7 @@ def run_backtest_summary(
         else None
     )
 
-    all_results: list[dict] = []
+    all_results: list[dict[str, Any]] = []
     dates_found: list[str] = []
 
     if not data_root.exists():
@@ -340,12 +516,12 @@ def run_backtest_summary(
         click.echo(f"\n结果保存: {stats_path}")
 
 
-def _aggregate_by_sender(results: list[dict]) -> list[dict]:
-    by_sender: dict[str, list[dict]] = defaultdict(list)
+def _aggregate_by_sender(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_sender: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
         by_sender[r["sender"]].append(r)
 
-    stats: list[dict] = []
+    stats: list[dict[str, Any]] = []
     for sender, items in by_sender.items():
         s: dict[str, object] = {"sender": sender, "count": len(items)}
         for w in WINDOWS:

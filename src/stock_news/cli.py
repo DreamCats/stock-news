@@ -156,6 +156,57 @@ def dedup(ctx: click.Context, date_str: str, dry_run: bool) -> None:
     _dedup(date_str, dry_run, ctx.obj["json_output"])
 
 
+# -- backfill --
+
+
+@main.command("backfill")
+@click.option(
+    "--days",
+    type=click.IntRange(min=1),
+    default=30,
+    show_default=True,
+    help="向前补齐最近 N 天",
+)
+@click.option("--end-date", default="today", show_default=True, help="结束日期")
+@click.option(
+    "--time-range",
+    default="09:00-23:00",
+    show_default=True,
+    help="每日拉取时间窗口",
+)
+@click.option("--source", "-s", default="all", show_default=True, help="数据源")
+@click.option("--provider", "-p", help="指定 LLM provider")
+@click.option("--slice-hours", type=int, default=1, show_default=True, help="fetch 切片小时数")
+@click.option("--workers", type=int, default=4, show_default=True, help="fetch 并发数")
+@click.option("--dry-run", is_flag=True, help="只展示将补齐的日期和阶段")
+@click.pass_context
+def backfill(
+    ctx: click.Context,
+    days: int,
+    end_date: str,
+    time_range: str,
+    source: str,
+    provider: str | None,
+    slice_hours: int,
+    workers: int,
+    dry_run: bool,
+) -> None:
+    """顺序补齐历史窗口数据."""
+    from stock_news.commands.backfill import run_backfill
+
+    run_backfill(
+        days,
+        end_date,
+        time_range,
+        source,
+        provider,
+        slice_hours,
+        workers,
+        dry_run,
+        ctx.obj["json_output"],
+    )
+
+
 # -- analyze --
 
 
@@ -210,18 +261,6 @@ def analyze_show(ctx: click.Context, date_str: str) -> None:
     show_analysis(date_str, ctx.obj["json_output"])
 
 
-@analyze.command("report")
-@click.option("--date", "-d", "date_str", default="today", help="日期")
-@click.option("--output", "-o", help="输出路径（默认保存到数据目录）")
-@click.option("--provider", "-p", help="指定 LLM provider")
-@click.pass_context
-def analyze_report(ctx: click.Context, date_str: str, output: str | None, provider: str | None) -> None:
-    """生成分析报告 HTML（含 LLM 摘要和逻辑归纳）."""
-    from stock_news.commands.report import generate_report
-
-    generate_report(date_str, output, provider, ctx.obj["json_output"])
-
-
 @analyze.command("pipeline")
 @click.option("--date", "-d", "date_str", default="today", help="日期")
 @click.option("--no-llm", is_flag=True, help="不使用 LLM，降级为规则分类")
@@ -234,17 +273,46 @@ def analyze_pipeline(ctx: click.Context, date_str: str, no_llm: bool, provider: 
     _pipeline(date_str, no_llm, provider, ctx.obj["json_output"])
 
 
-@analyze.command("backtest")
+@analyze.group("backtest", invoke_without_command=True)
 @click.option("--date", "-d", "date_str", default="today", help="日期")
 @click.pass_context
 def analyze_backtest(ctx: click.Context, date_str: str) -> None:
     """回测推荐人胜率（需先 sn market init）."""
+    if ctx.invoked_subcommand is not None:
+        return
     from stock_news.commands.backtest import run_backtest
 
     run_backtest(date_str, ctx.obj["json_output"])
 
 
-@analyze.command("backtest-summary")
+@analyze_backtest.command("refresh")
+@click.option(
+    "--as-of",
+    "as_of_str",
+    default="today",
+    show_default=True,
+    help="刷新到哪一天",
+)
+@click.option(
+    "--window-days",
+    type=click.IntRange(min=1),
+    default=30,
+    show_default=True,
+    help="扫描最近 N 天推荐",
+)
+@click.pass_context
+def analyze_backtest_refresh(
+    ctx: click.Context,
+    as_of_str: str,
+    window_days: int,
+) -> None:
+    """刷新已成熟的 T+N 回测窗口."""
+    from stock_news.commands.backtest import run_backtest_refresh
+
+    run_backtest_refresh(as_of_str, window_days, ctx.obj["json_output"])
+
+
+@analyze_backtest.command("summary")
 @click.option("--top", "-n", type=int, default=None, help="只显示前 N 名")
 @click.option(
     "--min-count",
@@ -277,6 +345,141 @@ def analyze_backtest_summary(
         min_count=min_count,
         window_days=None if include_all else window_days,
     )
+
+
+# -- strategy --
+
+
+@main.group()
+@click.pass_context
+def strategy(ctx: click.Context) -> None:
+    """盘中策略快报."""
+    pass
+
+
+@strategy.command("generate")
+@click.option("--date", "-d", "date_str", default="today", help="日期")
+@click.option(
+    "--window-minutes",
+    type=click.IntRange(min=1),
+    default=20,
+    show_default=True,
+    help="本轮窗口分钟数",
+)
+@click.option(
+    "--top",
+    type=click.IntRange(min=1),
+    default=5,
+    show_default=True,
+    help="最多输出候选机会数",
+)
+@click.pass_context
+def strategy_generate(
+    ctx: click.Context,
+    date_str: str,
+    window_minutes: int,
+    top: int,
+) -> None:
+    """生成策略快报 JSON 和 Markdown."""
+    from stock_news.commands.strategy import generate
+
+    generate(date_str, window_minutes, top, ctx.obj["json_output"])
+
+
+# -- workflow --
+
+
+@main.group()
+@click.pass_context
+def workflow(ctx: click.Context) -> None:
+    """盘中增量 workflow."""
+    pass
+
+
+@workflow.command("run")
+@click.option("--date", "-d", "date_str", default="today", help="日期")
+@click.option(
+    "--window-minutes",
+    type=click.IntRange(min=1),
+    default=20,
+    show_default=True,
+    help="本轮窗口分钟数",
+)
+@click.option(
+    "--window-days",
+    type=click.IntRange(min=1),
+    default=30,
+    show_default=True,
+    help="回测与推荐人统计窗口天数",
+)
+@click.option("--source", "-s", default="all", show_default=True, help="fetch 数据源")
+@click.option("--provider", "-p", help="指定 LLM provider")
+@click.option("--delivery-target", help="发送到单个 delivery target")
+@click.option("--delivery-route", help="发送到 delivery route")
+@click.option("--send-empty", is_flag=True, help="无新增有效机会时也发送")
+@click.option("--top", type=click.IntRange(min=1), default=5, show_default=True)
+@click.option(
+    "--min-count",
+    type=int,
+    default=1,
+    show_default=True,
+    help="推荐人统计最少样本数",
+)
+@click.option(
+    "--slice-hours",
+    type=int,
+    default=1,
+    show_default=True,
+    help="fetch 切片小时数",
+)
+@click.option("--workers", type=int, default=4, show_default=True, help="fetch 并发数")
+@click.option("--execute", is_flag=True, help="真实执行；不加时只展示 dry-run 计划")
+@click.pass_context
+def workflow_run(
+    ctx: click.Context,
+    date_str: str,
+    window_minutes: int,
+    window_days: int,
+    source: str,
+    provider: str | None,
+    delivery_target: str | None,
+    delivery_route: str | None,
+    send_empty: bool,
+    top: int,
+    min_count: int,
+    slice_hours: int,
+    workers: int,
+    execute: bool,
+) -> None:
+    """执行一次盘中增量 workflow."""
+    from stock_news.commands.workflow import run_workflow
+
+    run_workflow(
+        date_str,
+        window_minutes,
+        window_days,
+        source,
+        provider,
+        delivery_target,
+        delivery_route,
+        send_empty,
+        top,
+        min_count,
+        slice_hours,
+        workers,
+        execute,
+        ctx.obj["json_output"],
+    )
+
+
+@workflow.command("status")
+@click.option("--date", "-d", "date_str", default="today", help="日期")
+@click.pass_context
+def workflow_status(ctx: click.Context, date_str: str) -> None:
+    """查看最近一次 workflow 状态."""
+    from stock_news.commands.workflow import workflow_status as _workflow_status
+
+    _workflow_status(date_str, ctx.obj["json_output"])
 
 
 # -- llm --
@@ -450,10 +653,16 @@ def _register_schedule_commands() -> None:
     from stock_news.commands.schedule_cmd import schedule
 
     main.add_command(schedule, "schedule")
-    main.add_command(schedule, "sched")
+
+
+def _register_delivery_commands() -> None:
+    from stock_news.commands.delivery import delivery
+
+    main.add_command(delivery, "delivery")
 
 
 _register_schedule_commands()
+_register_delivery_commands()
 
 
 # -- entry --
