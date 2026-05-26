@@ -37,7 +37,11 @@ def list_providers(json_output: bool) -> None:
         data = {
             "default": cfg.llm.default_provider,
             "providers": {
-                k: {"base_url": v.base_url, "model": v.model}
+                k: {
+                    "base_url": v.base_url,
+                    "model": v.model,
+                    "timeout": v.timeout,
+                }
                 for k, v in cfg.llm.providers.items()
             },
             "task_routing": cfg.llm.task_routing,
@@ -46,12 +50,16 @@ def list_providers(json_output: bool) -> None:
     else:
         if not cfg.llm.providers:
             click.echo("未配置 LLM provider")
-            click.echo("使用: sn llm add <name> --base-url ... --model ... --api-key ...")
+            click.echo(
+                "使用: sn llm add <name> --base-url ... --model ... --api-key ..."
+            )
             return
         click.echo(f"默认 provider: {cfg.llm.default_provider or '(未设置)'}\n")
         for name, p in cfg.llm.providers.items():
             marker = " *" if name == cfg.llm.default_provider else ""
-            click.echo(f"  {name}{marker}: {p.model} @ {p.base_url}")
+            click.echo(
+                f"  {name}{marker}: {p.model} @ {p.base_url} (timeout={p.timeout:g}s)"
+            )
         if cfg.llm.task_routing:
             click.echo("\n任务路由:")
             for task, provider in cfg.llm.task_routing.items():
@@ -73,12 +81,22 @@ def test_provider(provider_name: str | None, json_output: bool) -> None:
 
     result = test_connection(provider_name)
     if json_output:
-        click.echo(json.dumps({"ok": result["status"] == "ok", "data": result}, ensure_ascii=False, indent=2))
+        click.echo(
+            json.dumps(
+                {"ok": result["status"] == "ok", "data": result},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         if result["status"] == "ok":
             click.echo(f"✓ {result['provider']} ({result['model']}): {result['reply']}")
         else:
-            click.secho(f"✗ {result['provider']} ({result['model']}): {result.get('error', '未知错误')}", fg="red")
+            error = result.get("error", "未知错误")
+            click.secho(
+                f"✗ {result['provider']} ({result['model']}): {error}",
+                fg="red",
+            )
 
 
 def chat_cmd(message: str, provider_name: str | None, json_output: bool) -> None:
@@ -86,7 +104,11 @@ def chat_cmd(message: str, provider_name: str | None, json_output: bool) -> None
 
     reply = chat([{"role": "user", "content": message}], provider_name=provider_name)
     if json_output:
-        click.echo(json.dumps({"ok": True, "data": {"reply": reply}}, ensure_ascii=False, indent=2))
+        click.echo(
+            json.dumps(
+                {"ok": True, "data": {"reply": reply}}, ensure_ascii=False, indent=2
+            )
+        )
     else:
         click.echo(reply)
 

@@ -110,6 +110,7 @@ class LLMProviderConfig(BaseModel):
     model: str
     max_tokens: int | None = None
     temperature: float = 0.1
+    timeout: float = 300.0
 
 
 class LLMConfig(BaseModel):

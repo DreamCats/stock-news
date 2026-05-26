@@ -38,6 +38,29 @@ def test_workflow_run_defaults_to_dry_run() -> None:
     ]
 
 
+def test_workflow_dry_run_can_enable_strategy_llm() -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--json",
+            "workflow",
+            "run",
+            "--date",
+            "2026-05-25",
+            "--window-minutes",
+            "20",
+            "--strategy-llm",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert (
+        "strategy generate --date 2026-05-25 --window-minutes 20 --with-llm"
+        in payload["steps"]
+    )
+
+
 def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
     monkeypatch.setattr(
@@ -87,6 +110,8 @@ def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
         _window_minutes: int,
         _top: int,
         _json: bool,
+        _use_llm: bool,
+        _provider_name: str | None,
     ) -> None:
         calls.append(("strategy_generate", date_str))
         strategy_dir = tmp_path / date_str / "strategy"
@@ -112,6 +137,7 @@ def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
         min_count=1,
         slice_hours=1,
         workers=4,
+        strategy_llm=False,
         execute=True,
         json_output=True,
     )

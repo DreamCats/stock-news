@@ -6,6 +6,7 @@ import json
 import sys
 import threading
 import time
+from typing import Any, cast
 
 from openai import OpenAI, RateLimitError
 
@@ -38,12 +39,15 @@ def _rpm_wait() -> None:
         time.sleep(wait)
 
 
-def _resolve_provider(provider_name: str | None = None) -> tuple[str, LLMProviderConfig]:
+def _resolve_provider(
+    provider_name: str | None = None,
+) -> tuple[str, LLMProviderConfig]:
     """解析 provider 名称和配置."""
     cfg = load()
     if not cfg.llm.providers:
         raise ConfigError(
-            "未配置 LLM provider，请先运行: sn llm add <name> --base-url ... --model ... --api-key ..."
+            "未配置 LLM provider，请先运行: "
+            "sn llm add <name> --base-url ... --model ... --api-key ..."
         )
 
     name = provider_name or cfg.llm.default_provider
@@ -61,7 +65,7 @@ def _build_client(provider: LLMProviderConfig) -> OpenAI:
     return OpenAI(
         base_url=provider.base_url,
         api_key=provider.api_key or "no-key",
-        timeout=120.0,
+        timeout=provider.timeout,
     )
 
 
@@ -83,7 +87,7 @@ def chat(
     """发送聊天请求，返回文本."""
     name, provider = _resolve_provider(provider_name)
     client = _build_client(provider)
-    kwargs: dict = {
+    kwargs: dict[str, Any] = {
         "model": model or provider.model,
         "messages": messages,
         "temperature": temperature if temperature is not None else provider.temperature,
@@ -97,14 +101,17 @@ def chat(
     for attempt in range(_MAX_RETRIES + 1):
         _rpm_wait()
         try:
-            resp = client.chat.completions.create(**kwargs)  # type: ignore[arg-type]
+            resp = client.chat.completions.create(**kwargs)
             content = resp.choices[0].message.content
             return content or ""
         except RateLimitError:
             if attempt == _MAX_RETRIES:
                 raise
-            delay = _BASE_DELAY * (2 ** attempt)
-            sys.stderr.write(f"  ⏳ 429 限频，{delay:.0f}s 后重试 ({attempt + 1}/{_MAX_RETRIES})...\n")
+            delay = _BASE_DELAY * (2**attempt)
+            sys.stderr.write(
+                "  ⏳ 429 限频，"
+                f"{delay:.0f}s 后重试 ({attempt + 1}/{_MAX_RETRIES})...\n"
+            )
             sys.stderr.flush()
             time.sleep(delay)
     return ""
@@ -124,12 +131,19 @@ def chat_json(
             lines = raw.split("\n")
             raw = "\n".join(lines[1:-1]) if len(lines) > 2 else raw
         try:
-            return json.loads(raw)  # type: ignore[no-any-return]
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
             if attempt == 0:
                 messages = messages + [
                     {"role": "assistant", "content": raw},
-                    {"role": "user", "content": "返回格式不是合法 JSON，请重新输出纯 JSON，不要包含 markdown 代码块。"},
+                    {
+                        "role": "user",
+                        "content": (
+                            "返回格式不是合法 JSON，请重新输出纯 JSON，"
+                            "不要包含 markdown 代码块。"
+                        ),
+                    },
                 ]
                 continue
             raise
@@ -152,7 +166,7 @@ def chat_json_list(
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                return parsed  # type: ignore[no-any-return]
+                return cast(list[dict[str, object]], parsed)
             if isinstance(parsed, dict):
                 return [parsed]
             return []
@@ -160,7 +174,13 @@ def chat_json_list(
             if attempt == 0:
                 messages = messages + [
                     {"role": "assistant", "content": raw},
-                    {"role": "user", "content": "返回格式不是合法 JSON 数组，请重新输出纯 JSON 数组，不要包含 markdown 代码块。"},
+                    {
+                        "role": "user",
+                        "content": (
+                            "返回格式不是合法 JSON 数组，请重新输出纯 JSON 数组，"
+                            "不要包含 markdown 代码块。"
+                        ),
+                    },
                 ]
                 continue
             raise
@@ -175,6 +195,16 @@ def test_connection(provider_name: str | None = None) -> dict[str, str]:
             [{"role": "user", "content": "回复 ok"}],
             provider_name=name,
         )
-        return {"provider": name, "model": provider.model, "status": "ok", "reply": reply.strip()}
+        return {
+            "provider": name,
+            "model": provider.model,
+            "status": "ok",
+            "reply": reply.strip(),
+        }
     except Exception as e:
-        return {"provider": name, "model": provider.model, "status": "error", "error": str(e)}
+        return {
+            "provider": name,
+            "model": provider.model,
+            "status": "error",
+            "error": str(e),
+        }

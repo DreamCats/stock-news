@@ -248,9 +248,11 @@ llm:
       base_url: "https://xxx/v1"
       model: "mimo-v2.5"
       api_key: "xxx"
+      timeout: 300
   task_routing:
     classify: mimo
     extract: mimo
+    strategy: mimo
 storage:
   data_dir: "~/.config/stock-news/data"
   format: "json"

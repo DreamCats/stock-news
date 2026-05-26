@@ -125,7 +125,13 @@ def data(ctx: click.Context) -> None:
 
 
 @data.command()
-@click.option("--date", "-d", "date_str", default="today", help="日期: today / yesterday / 2026-05-23")
+@click.option(
+    "--date",
+    "-d",
+    "date_str",
+    default="today",
+    help="日期: today / yesterday / 2026-05-23",
+)
 @click.pass_context
 def stats(ctx: click.Context, date_str: str) -> None:
     """查看数据统计."""
@@ -135,7 +141,13 @@ def stats(ctx: click.Context, date_str: str) -> None:
 
 
 @data.command("list")
-@click.option("--date", "-d", "date_str", default="today", help="日期: today / yesterday / 2026-05-23")
+@click.option(
+    "--date",
+    "-d",
+    "date_str",
+    default="today",
+    help="日期: today / yesterday / 2026-05-23",
+)
 @click.option("--source", "-s", help="筛选数据源: 个人消息 / 个人群")
 @click.pass_context
 def data_list(ctx: click.Context, date_str: str, source: str | None) -> None:
@@ -176,7 +188,9 @@ def dedup(ctx: click.Context, date_str: str, dry_run: bool) -> None:
 )
 @click.option("--source", "-s", default="all", show_default=True, help="数据源")
 @click.option("--provider", "-p", help="指定 LLM provider")
-@click.option("--slice-hours", type=int, default=1, show_default=True, help="fetch 切片小时数")
+@click.option(
+    "--slice-hours", type=int, default=1, show_default=True, help="fetch 切片小时数"
+)
 @click.option("--workers", type=int, default=4, show_default=True, help="fetch 并发数")
 @click.option("--dry-run", is_flag=True, help="只展示将补齐的日期和阶段")
 @click.pass_context
@@ -222,7 +236,9 @@ def analyze(ctx: click.Context) -> None:
 @click.option("--no-llm", is_flag=True, help="不使用 LLM，降级为规则分类")
 @click.option("--provider", "-p", help="指定 LLM provider")
 @click.pass_context
-def classify(ctx: click.Context, date_str: str, no_llm: bool, provider: str | None) -> None:
+def classify(
+    ctx: click.Context, date_str: str, no_llm: bool, provider: str | None
+) -> None:
     """对消息做分类."""
     from stock_news.commands.analyze import classify as _classify
 
@@ -266,7 +282,9 @@ def analyze_show(ctx: click.Context, date_str: str) -> None:
 @click.option("--no-llm", is_flag=True, help="不使用 LLM，降级为规则分类")
 @click.option("--provider", "-p", help="指定 LLM provider")
 @click.pass_context
-def analyze_pipeline(ctx: click.Context, date_str: str, no_llm: bool, provider: str | None) -> None:
+def analyze_pipeline(
+    ctx: click.Context, date_str: str, no_llm: bool, provider: str | None
+) -> None:
     """一键执行: 分类 → 抽取 → 回测."""
     from stock_news.commands.analyze import pipeline as _pipeline
 
@@ -373,17 +391,21 @@ def strategy(ctx: click.Context) -> None:
     show_default=True,
     help="最多输出候选机会数",
 )
+@click.option("--with-llm", is_flag=True, help="使用 LLM 生成强推逻辑链")
+@click.option("--provider", "-p", help="指定 LLM provider")
 @click.pass_context
 def strategy_generate(
     ctx: click.Context,
     date_str: str,
     window_minutes: int,
     top: int,
+    with_llm: bool,
+    provider: str | None,
 ) -> None:
     """生成策略快报 JSON 和 Markdown."""
     from stock_news.commands.strategy import generate
 
-    generate(date_str, window_minutes, top, ctx.obj["json_output"])
+    generate(date_str, window_minutes, top, ctx.obj["json_output"], with_llm, provider)
 
 
 # -- workflow --
@@ -433,6 +455,7 @@ def workflow(ctx: click.Context) -> None:
     help="fetch 切片小时数",
 )
 @click.option("--workers", type=int, default=4, show_default=True, help="fetch 并发数")
+@click.option("--strategy-llm", is_flag=True, help="策略报告使用 LLM 生成强推逻辑链")
 @click.option("--execute", is_flag=True, help="真实执行；不加时只展示 dry-run 计划")
 @click.pass_context
 def workflow_run(
@@ -449,6 +472,7 @@ def workflow_run(
     min_count: int,
     slice_hours: int,
     workers: int,
+    strategy_llm: bool,
     execute: bool,
 ) -> None:
     """执行一次盘中增量 workflow."""
@@ -467,6 +491,7 @@ def workflow_run(
         min_count,
         slice_hours,
         workers,
+        strategy_llm,
         execute,
         ctx.obj["json_output"],
     )
@@ -499,7 +524,14 @@ def llm(ctx: click.Context) -> None:
 @click.option("--api-key", default="", help="API key")
 @click.option("--default", "set_default", is_flag=True, help="设为默认")
 @click.pass_context
-def llm_add(ctx: click.Context, name: str, base_url: str, model: str, api_key: str, set_default: bool) -> None:
+def llm_add(
+    ctx: click.Context,
+    name: str,
+    base_url: str,
+    model: str,
+    api_key: str,
+    set_default: bool,
+) -> None:
     """添加 LLM provider."""
     from stock_news.commands.llm_cmd import add_provider
 
@@ -600,8 +632,10 @@ def market_search(ctx: click.Context, keyword: str) -> None:
 @click.option("--start", "start_date", required=True, help="开始日期 YYYYMMDD")
 @click.option("--end", "end_date", required=True, help="结束日期 YYYYMMDD")
 @click.pass_context
-def market_price(ctx: click.Context, ts_code: str, start_date: str, end_date: str) -> None:
-    """查询/拉取日线行情，如: sn market price 600519.SH --start 20260101 --end 20260523."""
+def market_price(
+    ctx: click.Context, ts_code: str, start_date: str, end_date: str
+) -> None:
+    """查询/拉取日线行情."""
     from stock_news.commands.market_cmd import price
 
     price(ts_code, start_date, end_date, ctx.obj["json_output"])

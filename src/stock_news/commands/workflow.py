@@ -105,6 +105,7 @@ def _dry_run_payload(
     window_minutes: int,
     window_days: int,
     source: str,
+    strategy_llm: bool,
     delivery_target: str | None,
     delivery_route: str | None,
 ) -> dict[str, Any]:
@@ -115,7 +116,10 @@ def _dry_run_payload(
         f"analyze opinion --date {date_str}",
         f"analyze backtest refresh --as-of {date_str} --window-days {window_days}",
         f"analyze backtest summary --window-days {window_days}",
-        f"strategy generate --date {date_str} --window-minutes {window_minutes}",
+        (
+            f"strategy generate --date {date_str} --window-minutes {window_minutes}"
+            + (" --with-llm" if strategy_llm else "")
+        ),
     ]
     if delivery_target:
         steps.append(
@@ -149,6 +153,7 @@ def run_workflow(
     min_count: int,
     slice_hours: int,
     workers: int,
+    strategy_llm: bool,
     execute: bool,
     json_output: bool,
 ) -> None:
@@ -166,6 +171,7 @@ def run_workflow(
             window_minutes,
             window_days,
             source,
+            strategy_llm,
             delivery_target,
             delivery_route,
         )
@@ -217,7 +223,14 @@ def run_workflow(
         ),
         (
             "strategy_generate",
-            lambda: strategy_generate(normalized_date, window_minutes, top, False),
+            lambda: strategy_generate(
+                normalized_date,
+                window_minutes,
+                top,
+                False,
+                strategy_llm,
+                provider_name,
+            ),
         ),
     ]
 

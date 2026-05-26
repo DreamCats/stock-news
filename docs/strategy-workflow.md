@@ -43,7 +43,7 @@ sn strategy generate --date today --window-minutes 20 --top 5
 - 读取 recommendations、opinions、sender_stats。
 - 生成中间策略结构 `strategy/strategy.json`。
 - 生成可投递内容 `strategy/strategy.md`。
-- 暂不默认调用 LLM；后续只把压缩后的 `strategy.json` Top N 候选送给 LLM 做文字归纳。
+- 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做强推逻辑链。
 
 不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活由 workflow 显式编排。
 
@@ -197,14 +197,26 @@ sender_quality =
 
 LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 
-建议让 LLM 只做三件事：
+当前让 LLM 先做策略主线，再做强推逻辑解释：
 
-- 对候选标的排序并解释优先级。
-- 合并相似推荐理由，提炼交易逻辑。
-- 生成老板可快速阅读的 markdown。
+- `strategy_view.market_summary`：今日最重要的主线，以及为什么这些线索集中出现。
+- `strategy_view.mainlines`：主线拆解、相关标的、验证点。
+- `strategy_view.priority_targets`：最值得优先看的 2-4 个标的。
+- `strategy_view.baskets`：同主题、同证据、同推荐逻辑的标的合并为主题篮子。
+- `strategy_view.watchlist`：证据薄、单条推荐、主题跟随的待验证观察。
+- `strong_reason`：为什么优先看这个标的。
+- `boss_pitch`：写给老板看的连续判断，讲清变化、传导、为什么现在值得看、证伪点。
+- `score_driver`：解释排序靠前的结构化原因，而不是复述分数。
+- `logic_chain`：变化/触发 → 传导机制 → 为什么可能影响股价或关注度。
+- `information_increment`：今天相比普通推荐或历史观点新增了什么。
+- `validation_points`：后续验证点。
+- `risks`：最可能证伪该逻辑的风险。
+
+排序仍由程序完成，LLM 不改 `score`，也不决定哪些标的进入候选池。不开 `--with-llm` 时，报告使用本地模板从证据、共识、风险字段生成兜底逻辑。
 
 不要让 LLM 负责：
 
+- 重新选股或重排候选。
 - 全量去重。
 - 计算胜率。
 - 判断哪些消息已处理。
@@ -220,6 +232,19 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 ## 结论
 - 最值得优先看的 3-5 个标的或方向。
 - 每个结论说明触发原因和风险。
+
+## 强推逻辑
+- 今日主线：先讲本轮最重要的产业或主题变化。
+- 主线拆解：说明每条主线为什么重要，以及相关标的。
+- 优先关注：只放最值得老板先看的 2-4 个。
+- 主题篮子：同主题标的合并展示，说明共同逻辑和差异。
+- 待验证观察：证据薄或主题跟随的标的，说明升级需要什么证据。
+- 逻辑强度：强 / 中 / 弱 / 待验证。
+- 给老板的判断：连续段落，讲清为什么现在值得看。
+- 为什么排前：共识、证据、观点变化、推荐人历史表现分别贡献了什么。
+- 关键证据：来自原始抽取的短证据。
+- 后续验证：接下来跟踪什么。
+- 主要风险：什么情况会证伪这个逻辑。
 
 ## 新增机会
 | 类型 | 标的 | 动作 | 推荐人 | 30d T+5胜率 | 样本 | 证据 | 风险 |
