@@ -22,13 +22,13 @@ def _raw_message(content: str, minute: int) -> RawMessage:
     )
 
 
-def _recommendation(msg: RawMessage) -> Recommendation:
+def _recommendation(msg: RawMessage, ticker: str = "寒武纪") -> Recommendation:
     return Recommendation(
         message_id=msg.message_id,
         source=msg.source,
         sender=msg.sender,
         message_time=msg.message_time,
-        ticker="寒武纪",
+        ticker=ticker,
         action="关注",
         strength="中",
         reasoning="算力逻辑",
@@ -124,6 +124,124 @@ def test_opinion_only_processes_new_recommendations(
         (opinions_dir / "processed_ids.json").read_text(encoding="utf-8")
     )
     assert processed == sorted([old_msg.message_id, new_msg.message_id])
+
+
+def test_opinion_dedupes_recommendations_by_message_id(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    msg = _raw_message("寒武纪和中际旭创都可以关注", 1)
+    _write_raw_messages(tmp_path, [msg])
+    _write_recommendations(
+        tmp_path,
+        [
+            _recommendation(msg, "寒武纪"),
+            _recommendation(msg, "中际旭创"),
+        ],
+    )
+
+    calls: list[str] = []
+
+    def fake_analyze(msg: RawMessage, history: str, provider_name: str | None):
+        calls.append(msg.message_id)
+        return OpinionNode(
+            opinion_id="op-1",
+            version=1,
+            message_id=msg.message_id,
+            sender=msg.sender,
+            topic_key="寒武纪",
+            stance="bullish",
+            update_type="new",
+            summary="新增观点",
+        )
+
+    monkeypatch.setattr(
+        opinion_mod,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(opinion_mod, "_analyze_opinion", fake_analyze)
+
+    opinion_mod.opinion("2026-05-25", provider_name=None, json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["new"] == 1
+    assert calls == [msg.message_id]
+
+    processed = json.loads(
+        (tmp_path / "2026-05-25" / "opinions" / "processed_ids.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert processed == [msg.message_id]
+
+
+def test_opinion_batches_messages_by_sender(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    messages = [
+        _raw_message("寒武纪逻辑强化", 1),
+        _raw_message("继续看好寒武纪", 2),
+        _raw_message("寒武纪订单改善", 3),
+    ]
+    _write_raw_messages(tmp_path, messages)
+    _write_recommendations(tmp_path, [_recommendation(msg) for msg in messages])
+
+    batch_calls: list[list[str]] = []
+    single_calls: list[str] = []
+    opinion_id = "op-1"
+
+    def fake_batch(
+        sender: str,
+        msgs: list[RawMessage],
+        history: str,
+        provider_name: str | None,
+    ):
+        batch_calls.append([msg.message_id for msg in msgs])
+        return {
+            idx: OpinionNode(
+                opinion_id=opinion_id,
+                version=1,
+                message_id=msg.message_id,
+                sender=sender,
+                topic_key="寒武纪",
+                stance="bullish",
+                update_type="reinforce",
+                summary=f"观点{idx}",
+            )
+            for idx, msg in enumerate(msgs)
+        }
+
+    def fake_single(msg: RawMessage, history: str, provider_name: str | None):
+        single_calls.append(msg.message_id)
+        return None
+
+    monkeypatch.setattr(
+        opinion_mod,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(opinion_mod, "_analyze_opinion_batch", fake_batch)
+    monkeypatch.setattr(opinion_mod, "_analyze_opinion", fake_single)
+
+    opinion_mod.opinion("2026-05-25", provider_name=None, json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["new"] == 3
+    assert batch_calls == [[msg.message_id for msg in messages]]
+    assert single_calls == []
+
+    saved = json.loads(
+        (tmp_path / "2026-05-25" / "opinions" / "opinions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [item["version"] for item in saved] == [1, 2, 3]
+    assert saved[1]["previous_id"] == messages[0].message_id
+    assert saved[2]["previous_id"] == messages[1].message_id
 
 
 def test_opinion_failure_is_not_marked_processed(
