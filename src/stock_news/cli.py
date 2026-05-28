@@ -380,9 +380,9 @@ def strategy(ctx: click.Context) -> None:
 @click.option(
     "--window-minutes",
     type=click.IntRange(min=1),
-    default=20,
+    default=1440,
     show_default=True,
-    help="本轮窗口分钟数",
+    help="策略累计窗口分钟数",
 )
 @click.option(
     "--top",
@@ -423,9 +423,9 @@ def workflow(ctx: click.Context) -> None:
 @click.option(
     "--window-minutes",
     type=click.IntRange(min=1),
-    default=20,
+    default=1440,
     show_default=True,
-    help="本轮窗口分钟数",
+    help="fetch 与策略累计窗口分钟数",
 )
 @click.option(
     "--window-days",

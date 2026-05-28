@@ -156,6 +156,74 @@ def test_strategy_separates_stock_trades_from_theme_clues(
     assert "| 国产算力 |" not in markdown
 
 
+def test_strategy_ranks_window_cumulative_candidates_but_tracks_updates(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    today = date.today().isoformat()
+    now = datetime.now().replace(microsecond=0)
+    old_rec = _rec(
+        "msg-old",
+        now - timedelta(hours=2),
+        target_name="高分标的",
+        sender="高胜率推荐人",
+    )
+    new_rec = _rec(
+        "msg-new",
+        now - timedelta(minutes=5),
+        target_name="新增标的",
+        sender="普通推荐人",
+    )
+    _write_json(
+        tmp_path / today / "extracted" / "recommendations.json",
+        [old_rec.model_dump(mode="json")],
+    )
+    _write_json(tmp_path / today / "opinions" / "opinions.json", [])
+    _write_json(
+        tmp_path / "backtest_summary" / "sender_stats.json",
+        [
+            {
+                "sender": "高胜率推荐人",
+                "count": 10,
+                "win_rate_t5": 1,
+                "avg_excess_t5": 0.2,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        strategy,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+
+    strategy.generate("today", 1440, 5, json_output=True)
+    json.loads(capsys.readouterr().out)
+
+    _write_json(
+        tmp_path / today / "extracted" / "recommendations.json",
+        [old_rec.model_dump(mode="json"), new_rec.model_dump(mode="json")],
+    )
+    strategy.generate("today", 1440, 5, json_output=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["data"]["has_updates"] is True
+
+    saved = json.loads(
+        (tmp_path / today / "strategy" / "strategy.json").read_text(encoding="utf-8")
+    )
+    assert [item["target_name"] for item in saved["new_recommendations"]] == [
+        "新增标的"
+    ]
+    assert [item["target_name"] for item in saved["candidate_trades"][:2]] == [
+        "高分标的",
+        "新增标的",
+    ]
+    markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## 窗口累计可交易机会" in markdown
+
+
 def test_strategy_merges_theme_clues_and_dedupes_evidence(
     tmp_path,
     monkeypatch,

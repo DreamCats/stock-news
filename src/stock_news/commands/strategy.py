@@ -885,6 +885,7 @@ def _build_payload(
     seen_opinion_keys = set(state.get("opinion_keys") or [])
 
     first_run = not seen_message_ids and not seen_opinion_keys
+    window_recs = [rec for rec in recs if _rec_time(rec, report_time) >= window_start]
     new_recs = [
         rec
         for rec in recs
@@ -899,7 +900,7 @@ def _build_payload(
             item for item in opinion_changes if item["message_id"] in new_rec_ids
         ]
 
-    consensus_all = _build_consensus(new_recs, sender_stats, None)
+    consensus_all = _build_consensus(window_recs, sender_stats, None)
     consensus = consensus_all[:top]
     conflicts = _build_conflicts(new_recs, opinions, top)
     candidates = _build_candidate_trades(consensus_all, opinion_changes, top)
@@ -926,6 +927,7 @@ def _build_payload(
             "end": report_time.isoformat(timespec="seconds"),
         },
         "has_updates": bool(new_recs or opinion_changes),
+        "window_recommendation_count": len(window_recs),
         "new_recommendations": [
             _build_recommendation_item(rec, sender_stats) for rec in new_recs
         ],
@@ -1141,7 +1143,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
                 f"{why}，score={item['score']}，{reason or '-'}"
             )
 
-    lines.extend(["", "## 新增可交易机会"])
+    lines.extend(["", "## 窗口累计可交易机会"])
     lines.append("| 标的 | score | confidence | 推荐人 | 核心证据 | 风险 |")
     lines.append("| --- | ---: | ---: | --- | --- | --- |")
     for item in candidates:

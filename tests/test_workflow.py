@@ -20,8 +20,6 @@ def test_workflow_run_defaults_to_dry_run() -> None:
             "run",
             "--date",
             "2026-05-25",
-            "--window-minutes",
-            "20",
         ],
     )
 
@@ -29,14 +27,15 @@ def test_workflow_run_defaults_to_dry_run() -> None:
     payload = json.loads(result.output)
     assert payload["dry_run"] is True
     assert payload["date"] == "2026-05-25"
+    assert payload["window_minutes"] == 1440
     assert payload["steps"] == [
-        "fetch --source all --last 20m",
+        "fetch --source all --last 1440m",
         "analyze classify --date 2026-05-25",
         "analyze extract --date 2026-05-25",
         "analyze opinion --date 2026-05-25",
         "analyze backtest refresh --as-of 2026-05-25 --window-days 30",
         "analyze backtest summary --window-days 30",
-        "strategy generate --date 2026-05-25 --window-minutes 20",
+        "strategy generate --date 2026-05-25 --window-minutes 1440",
     ]
 
 

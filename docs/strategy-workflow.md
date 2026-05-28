@@ -3,10 +3,12 @@
 ## 目标
 
 老板目标不是“每天生成一份报告”，而是盘中 `09:00-23:00` 每 20 分钟收到一次可行动的策略快报。
+调度频率是 20 分钟，策略观察窗口默认是当天累计窗口（1440 分钟）。
 
 策略快报需要回答：
 
-- 这 20 分钟有什么新增机会？
+- 当天累计最值得优先看的机会是什么？
+- 这 20 分钟有什么新增或强化线索？
 - 哪些标的或方向出现多人共识？
 - 哪些观点发生强化、修正、反转或分歧？
 - 相关推荐人近 30 天表现如何，可信度够不够？
@@ -34,7 +36,7 @@
 建议命令：
 
 ```bash
-sn strategy generate --date today --window-minutes 20 --top 5
+sn strategy generate --date today --window-minutes 1440 --top 5
 ```
 
 默认行为：
@@ -57,7 +59,7 @@ sn strategy generate --date today --window-minutes 20 --top 5
 sn delivery send --route boss --markdown-file ~/.config/stock-news/data/2026-05-25/strategy/strategy.md
 ```
 
-## 20 分钟 Workflow
+## 20 分钟调度 + 当天累计窗口 Workflow
 
 盘中每 20 分钟执行一轮：
 
@@ -75,7 +77,7 @@ fetch
 当前入口：
 
 ```bash
-sn workflow run --date today --window-minutes 20
+sn workflow run --date today --window-minutes 1440
 sn workflow run --execute --delivery-route boss
 sn workflow status --date today
 ```
@@ -85,11 +87,11 @@ sn workflow status --date today
 
 其中：
 
-- `fetch` 用当天窗口加去重，避免漏消息。
+- `fetch` 用当天累计窗口加去重，避免漏消息。
 - `classify/extract/opinion` 都应按 `message_id` 增量处理。
 - `backtest refresh` 补齐过去 30 天推荐里已经成熟的 T+N 窗口；当天推荐通常没有 T+1 结果，只进入策略候选和盘中跟踪，不进入完整回测。
 - `backtest summary` 刷新近 30 天推荐人统计。
-- `strategy generate` 读取已有推荐人统计并生成快报。
+- `strategy generate` 读取已有推荐人统计并生成当天累计快报；`has_updates` 仍只由本轮新增推荐或观点变化决定。
 - `delivery` 发送 markdown 产物。
 
 如果本轮没有新增推荐或观点变化，`strategy` 应输出 `has_updates=false`。workflow 可以选择不发送，或发送极短的“本轮无新增有效推荐”。
@@ -113,8 +115,8 @@ sn workflow status --date today
 
 LLM 不直接吃全量文件。程序先聚合出高价值候选集：
 
-- 本轮新增推荐：按 `message_id` 或 strategy state 对比上一轮。
-- 标的共识：按 `target_type + target_name` 聚合推荐人数、推荐人、动作、强度、置信度、最新时间。
+- 本轮新增推荐：按 `message_id` 或 strategy state 对比上一轮，用于判断是否发送。
+- 标的共识：在策略窗口内按 `target_type + target_name` 聚合推荐人数、推荐人、动作、强度、置信度、最新时间。
 - 推荐人可信度：关联近 30 天样本数、T+5 胜率、平均收益、超额收益。
 - 观点变化：从 opinions 中提取 `new/reinforce/revise/reverse/withdraw`。
 - 分歧：同一标的/主题出现相反动作或 stance。
