@@ -29,6 +29,7 @@ from stock_news.common.delivery.service import (
 )
 
 StepFn = Callable[[], None]
+Step = tuple[str, StepFn, bool]
 
 
 def _workflow_dir(data_dir: str, date_str: str, create: bool = True) -> Path:
@@ -189,7 +190,7 @@ def run_workflow(
         cfg.storage.data_dir,
         normalized_date,
     )
-    steps: list[tuple[str, StepFn]] = [
+    steps: list[Step] = [
         (
             "fetch",
             lambda: run_fetch(
@@ -204,13 +205,19 @@ def run_workflow(
                 workers,
                 False,
             ),
+            True,
         ),
-        ("classify", lambda: classify(normalized_date, False, provider_name, False)),
-        ("extract", lambda: extract(normalized_date, provider_name, False)),
-        ("opinion", lambda: opinion(normalized_date, provider_name, False)),
+        (
+            "classify",
+            lambda: classify(normalized_date, False, provider_name, False),
+            True,
+        ),
+        ("extract", lambda: extract(normalized_date, provider_name, False), True),
+        ("opinion", lambda: opinion(normalized_date, provider_name, False), True),
         (
             "backtest_refresh",
             lambda: run_backtest_refresh(normalized_date, window_days, False),
+            False,
         ),
         (
             "backtest_summary",
@@ -220,6 +227,7 @@ def run_workflow(
                 min_count=min_count,
                 window_days=window_days,
             ),
+            False,
         ),
         (
             "strategy_generate",
@@ -231,15 +239,17 @@ def run_workflow(
                 strategy_llm,
                 provider_name,
             ),
+            True,
         ),
     ]
 
     results: list[dict[str, Any]] = []
+    warnings: list[dict[str, str]] = []
     ok = True
     if not json_output:
         click.echo(f"=== workflow 开始: {normalized_date} ===", err=True)
 
-    for index, (name, step) in enumerate(steps, start=1):
+    for index, (name, step, required) in enumerate(steps, start=1):
         if not json_output:
             click.echo(f"[{index}/{len(steps)}] {name}...", err=True)
         step_started = time.time()
@@ -249,23 +259,30 @@ def run_workflow(
                 {
                     "step": name,
                     "ok": True,
+                    "required": required,
                     "seconds": round(time.time() - step_started, 2),
                     "output": output[-1000:] if output else "",
                 }
             )
         except Exception as exc:
-            ok = False
             results.append(
                 {
                     "step": name,
                     "ok": False,
+                    "required": required,
                     "seconds": round(time.time() - step_started, 2),
                     "error": str(exc),
                 }
             )
             if not json_output:
-                click.secho(f"  {name} 失败: {exc}", fg="red", err=True)
-            break
+                level = "失败" if required else "警告"
+                color = "red" if required else "yellow"
+                click.secho(f"  {name} {level}: {exc}", fg=color, err=True)
+            if required:
+                ok = False
+                break
+            warnings.append({"step": name, "error": str(exc)})
+            continue
 
     strategy_payload = _load_strategy_payload(strategy_json_path)
     delivery_result: dict[str, Any] | None = None
@@ -284,9 +301,16 @@ def run_workflow(
             ok = False
             delivery_result = {"ok": False, "error": str(exc)}
 
+    if not ok:
+        status = "failed"
+    elif warnings:
+        status = "completed_with_warnings"
+    else:
+        status = "success"
     finished_at = datetime.now().replace(microsecond=0)
     run_payload: dict[str, Any] = {
         "ok": ok,
+        "status": status,
         "date": normalized_date,
         "window_minutes": window_minutes,
         "window_days": window_days,
@@ -294,6 +318,7 @@ def run_workflow(
         "finished_at": finished_at.isoformat(),
         "seconds": round(time.time() - started_ts, 2),
         "steps": results,
+        "warnings": warnings,
         "strategy": {
             "has_updates": has_updates,
             "json_path": str(strategy_json_path),
@@ -306,9 +331,18 @@ def run_workflow(
     if json_output:
         click.echo(json.dumps(run_payload, ensure_ascii=False, indent=2))
     else:
-        status = "完成" if ok else "失败"
-        click.echo(f"\nworkflow {status}: {normalized_date}")
+        label = (
+            "失败"
+            if status == "failed"
+            else "完成（有警告）"
+            if status == "completed_with_warnings"
+            else "完成"
+        )
+        click.echo(f"\nworkflow {label}: {normalized_date}")
         click.echo(f"状态已保存: {state_path}")
+
+    if not ok:
+        raise click.exceptions.Exit(1)
 
 
 def workflow_status(date_str: str, json_output: bool) -> None:
@@ -343,7 +377,7 @@ def workflow_status(date_str: str, json_output: bool) -> None:
         click.echo(json.dumps({"ok": True, "data": data}, ensure_ascii=False, indent=2))
         return
 
-    status = "ok" if data.get("ok") else "failed"
+    status = data.get("status") or ("ok" if data.get("ok") else "failed")
     click.echo(f"{normalized_date} workflow: {status}")
     click.echo(f"started_at: {data.get('started_at')}")
     click.echo(f"finished_at: {data.get('finished_at')}")
@@ -351,3 +385,6 @@ def workflow_status(date_str: str, json_output: bool) -> None:
         if isinstance(step, dict):
             step_status = "ok" if step.get("ok") else f"failed: {step.get('error')}"
             click.echo(f"  {step.get('step')}: {step_status}")
+    for warning in data.get("warnings", []):
+        if isinstance(warning, dict):
+            click.echo(f"  warning {warning.get('step')}: {warning.get('error')}")
