@@ -1,10 +1,20 @@
 """Prompt 模板加载与渲染."""
+# ruff: noqa: E501
 
 from __future__ import annotations
 
 from pathlib import Path
 
 PROMPTS_DIR = Path.home() / ".config" / "stock-news" / "prompts"
+
+_DYNAMIC_MARKERS: dict[str, tuple[str, ...]] = {
+    "classify": ("消息来源：{source}",),
+    "classify_batch": ("以下是待分类的消息：",),
+    "extract": ("发送人：{sender}",),
+    "extract_batch": ("以下是待抽取的消息：",),
+    "opinion": ("发送人：{sender}",),
+    "opinion_batch": ("发送人：{sender}",),
+}
 
 BUILTIN_PROMPTS: dict[str, str] = {
     "classify": """\
@@ -177,7 +187,57 @@ def load_prompt(name: str) -> str:
     raise FileNotFoundError(f"Prompt 模板 '{name}' 不存在")
 
 
+def _split_builtin_prompt(name: str) -> tuple[str, str] | None:
+    """把内置 prompt 拆成稳定 system 指令和动态 user 输入."""
+    template = BUILTIN_PROMPTS.get(name)
+    if template is None:
+        return None
+
+    for marker in _DYNAMIC_MARKERS.get(name, ()):
+        index = template.find(marker)
+        if index == -1:
+            continue
+        system_prompt = template[:index].strip()
+        user_prompt = template[index:].strip()
+        return system_prompt, user_prompt
+    return None
+
+
+def _is_builtin_copy(name: str, content: str) -> bool:
+    builtin = BUILTIN_PROMPTS.get(name)
+    return builtin is not None and content.strip() == builtin.strip()
+
+
 def render_prompt(name: str, **kwargs: str) -> str:
     """加载并渲染 prompt 模板."""
     template = load_prompt(name)
     return template.format(**kwargs)
+
+
+def render_prompt_messages(name: str, **kwargs: str) -> list[dict[str, str]]:
+    """渲染为 chat messages，让稳定指令前缀更容易命中 prompt cache."""
+    system_path = PROMPTS_DIR / f"{name}.system.txt"
+    user_path = PROMPTS_DIR / f"{name}.user.txt"
+    if system_path.exists() and user_path.exists():
+        system_prompt = system_path.read_text(encoding="utf-8").format(**kwargs)
+        user_prompt = user_path.read_text(encoding="utf-8").format(**kwargs)
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    plain_path = PROMPTS_DIR / f"{name}.txt"
+    if plain_path.exists():
+        content = plain_path.read_text(encoding="utf-8")
+        if not _is_builtin_copy(name, content):
+            return [{"role": "user", "content": content.format(**kwargs)}]
+
+    split_prompt = _split_builtin_prompt(name)
+    if split_prompt is None:
+        return [{"role": "user", "content": render_prompt(name, **kwargs)}]
+
+    system_prompt, user_prompt = split_prompt
+    return [
+        {"role": "system", "content": system_prompt.format(**kwargs)},
+        {"role": "user", "content": user_prompt.format(**kwargs)},
+    ]

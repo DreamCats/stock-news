@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any
 
 import click
 
@@ -21,24 +22,61 @@ CLASSIFY_BATCH_SIZE = 16
 CONCURRENCY = 8
 
 _RECOMMENDATION_PATTERNS = [
-    r"推荐", r"买入", r"加仓", r"关注", r"看好", r"看多",
-    r"目标价", r"低吸", r"低开可", r"弹性大", r"短线",
-    r"重点关注", r"继续推", r"逻辑不变", r"可以介入",
+    r"推荐",
+    r"买入",
+    r"加仓",
+    r"关注",
+    r"看好",
+    r"看多",
+    r"目标价",
+    r"低吸",
+    r"低开可",
+    r"弹性大",
+    r"短线",
+    r"重点关注",
+    r"继续推",
+    r"逻辑不变",
+    r"可以介入",
 ]
 
 _EVENT_PATTERNS = [
-    r"策略会", r"调研", r"电话会", r"会议", r"路演",
-    r"活动", r"报名", r"直播", r"论坛",
+    r"策略会",
+    r"调研",
+    r"电话会",
+    r"会议",
+    r"路演",
+    r"活动",
+    r"报名",
+    r"直播",
+    r"论坛",
 ]
 
 _TOOL_PATTERNS = [
-    r"软件", r"工具", r"试用", r"订阅", r"开通",
-    r"下载", r"注册", r"app",
+    r"软件",
+    r"工具",
+    r"试用",
+    r"订阅",
+    r"开通",
+    r"下载",
+    r"注册",
+    r"app",
 ]
 
 
-def _msg_fields(msg: RawMessage) -> dict:
-    return {"source": msg.source, "sender": msg.sender, "message_time": msg.message_time}
+def _msg_fields(msg: RawMessage) -> dict[str, Any]:
+    return {
+        "source": msg.source,
+        "sender": msg.sender,
+        "message_time": msg.message_time,
+    }
+
+
+def _as_confidence(value: object, default: float = 0.5) -> float:
+    try:
+        confidence = float(str(value))
+    except (TypeError, ValueError):
+        return default
+    return min(max(confidence, 0.0), 1.0)
 
 
 def _classify_by_rules(msg: RawMessage) -> ClassifiedMessage:
@@ -90,19 +128,19 @@ def _classify_by_rules(msg: RawMessage) -> ClassifiedMessage:
 
 def _classify_by_llm(msg: RawMessage, provider_name: str | None) -> ClassifiedMessage:
     from stock_news.common.llm.client import chat_json, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("classify")
 
-    prompt = render_prompt(
+    messages = render_prompt_messages(
         "classify",
         source=msg.source,
         sender=msg.sender,
         raw_content=msg.raw_content,
     )
     result = chat_json(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )
@@ -116,7 +154,7 @@ def _classify_by_llm(msg: RawMessage, provider_name: str | None) -> ClassifiedMe
         message_id=msg.message_id,
         **_msg_fields(msg),
         category=category,
-        confidence=float(result.get("confidence", 0.5)),
+        confidence=_as_confidence(result.get("confidence")),
         reason=str(result.get("reason", "")),
         llm_provider=provider_name,
     )
@@ -128,7 +166,7 @@ def _classify_batch_by_llm(
 ) -> dict[int, ClassifiedMessage]:
     """批量分类，返回 {原始index: ClassifiedMessage}."""
     from stock_news.common.llm.client import chat_json_list, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("classify")
@@ -136,12 +174,14 @@ def _classify_batch_by_llm(
     lines: list[str] = []
     idx_map: dict[int, tuple[int, RawMessage]] = {}
     for seq, (orig_idx, msg) in enumerate(batch, 1):
-        lines.append(f"[{seq}] 来源: {msg.source}, 发送人: {msg.sender}\n{msg.raw_content[:500]}")
+        lines.append(
+            f"[{seq}] 来源: {msg.source}, 发送人: {msg.sender}\n{msg.raw_content[:500]}"
+        )
         idx_map[seq] = (orig_idx, msg)
 
-    prompt = render_prompt("classify_batch", messages="\n\n".join(lines))
+    messages = render_prompt_messages("classify_batch", messages="\n\n".join(lines))
     results = chat_json_list(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )
@@ -150,7 +190,13 @@ def _classify_batch_by_llm(
     for item in results:
         if not isinstance(item, dict) or "index" not in item:
             continue
-        seq = int(item["index"])
+        raw_index = item["index"]
+        if not isinstance(raw_index, int | str):
+            continue
+        try:
+            seq = int(raw_index)
+        except ValueError:
+            continue
         if seq not in idx_map:
             continue
         orig_idx, msg = idx_map[seq]
@@ -163,7 +209,7 @@ def _classify_batch_by_llm(
             message_id=msg.message_id,
             **_msg_fields(msg),
             category=category,
-            confidence=float(item.get("confidence", 0.5)),
+            confidence=_as_confidence(item.get("confidence")),
             reason=str(item.get("reason", "")),
             llm_provider=provider_name,
         )
@@ -182,7 +228,17 @@ def classify(
 
     if not messages:
         if json_output:
-            click.echo(json.dumps({"ok": True, "data": {"date": dt.isoformat(), "total": 0, "classified": []}, "message": f"{dt} 无消息"}, ensure_ascii=False, indent=2))
+            click.echo(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "data": {"date": dt.isoformat(), "total": 0, "classified": []},
+                        "message": f"{dt} 无消息",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         else:
             click.echo(f"{dt} 无消息可分类")
         return
@@ -197,27 +253,36 @@ def classify(
             counts: dict[str, int] = {}
             for r in results:
                 counts[r.category.value] = counts.get(r.category.value, 0) + 1
-            click.echo(json.dumps({
-                "ok": True,
-                "data": {
-                    "date": dt.isoformat(),
-                    "total": len(results),
-                    "new": 0,
-                    "distribution": counts,
-                    "classified": [r.model_dump(mode="json") for r in results],
-                },
-                "message": f"无新消息需分类，已有 {len(results)} 条",
-            }, ensure_ascii=False, indent=2))
+            click.echo(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "data": {
+                            "date": dt.isoformat(),
+                            "total": len(results),
+                            "new": 0,
+                            "distribution": counts,
+                            "classified": [r.model_dump(mode="json") for r in results],
+                        },
+                        "message": f"无新消息需分类，已有 {len(results)} 条",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         else:
             click.echo(f"{dt} 无新消息需分类（已有 {len(existing)} 条分类结果）")
         return
 
     if not no_llm:
         from stock_news.common.llm.prompts import ensure_prompts_dir
+
         ensure_prompts_dir()
 
     if not json_output:
-        click.echo(f"  已有 {len(existing)} 条，新增 {len(new_messages)} 条待分类", err=True)
+        click.echo(
+            f"  已有 {len(existing)} 条，新增 {len(new_messages)} 条待分类", err=True
+        )
 
     out_path = classified_dir(cfg.storage.data_dir, dt) / "classified.json"
     all_msg_ids = [m.message_id for m in messages]
@@ -236,12 +301,21 @@ def classify(
         results_map: dict[int, ClassifiedMessage] = {}
 
         indexed = list(enumerate(new_messages))
-        batches = [indexed[i:i + CLASSIFY_BATCH_SIZE] for i in range(0, len(indexed), CLASSIFY_BATCH_SIZE)]
+        batches = [
+            indexed[i : i + CLASSIFY_BATCH_SIZE]
+            for i in range(0, len(indexed), CLASSIFY_BATCH_SIZE)
+        ]
 
         if not json_output:
-            click.echo(f"  批量模式: {len(batches)} 批 × {CLASSIFY_BATCH_SIZE} 条, 并行 {CONCURRENCY}", err=True)
+            message = (
+                f"  批量模式: {len(batches)} 批 × {CLASSIFY_BATCH_SIZE} 条, "
+                f"并行 {CONCURRENCY}"
+            )
+            click.echo(message, err=True)
 
-        def _classify_fallback_one(idx: int, msg: RawMessage) -> tuple[int, ClassifiedMessage]:
+        def _classify_fallback_one(
+            idx: int, msg: RawMessage
+        ) -> tuple[int, ClassifiedMessage]:
             try:
                 return idx, _classify_by_llm(msg, provider_name)
             except Exception:
@@ -249,8 +323,14 @@ def classify(
 
         done_msgs = 0
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
-            futures = {pool.submit(_classify_batch_by_llm, batch, provider_name): batch for batch in batches}
-            fallback_futures: dict = {}
+            futures = {
+                pool.submit(_classify_batch_by_llm, batch, provider_name): batch
+                for batch in batches
+            }
+            fallback_futures: dict[
+                Future[tuple[int, ClassifiedMessage]],
+                tuple[int, RawMessage],
+            ] = {}
 
             for future in as_completed(futures):
                 batch = futures[future]
@@ -267,16 +347,24 @@ def classify(
                     click.echo(f"  已分类 {done_msgs}/{len(new_messages)}...", err=True)
                 if missed:
                     if not json_output:
-                        click.echo(f"    ↳ {len(missed)} 条缺失，提交逐条重试...", err=True)
+                        click.echo(
+                            f"    ↳ {len(missed)} 条缺失，提交逐条重试...", err=True
+                        )
                     for idx, msg in missed:
                         fb = pool.submit(_classify_fallback_one, idx, msg)
                         fallback_futures[fb] = (idx, msg)
 
                 for idx in [i for i, _ in batch if i in results_map]:
                     existing_map[results_map[idx].message_id] = results_map[idx]
-                snapshot = [existing_map[mid] for mid in all_msg_ids if mid in existing_map]
+                snapshot = [
+                    existing_map[mid] for mid in all_msg_ids if mid in existing_map
+                ]
                 out_path.write_text(
-                    json.dumps([r.model_dump(mode="json") for r in snapshot], ensure_ascii=False, indent=2),
+                    json.dumps(
+                        [r.model_dump(mode="json") for r in snapshot],
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
                     encoding="utf-8",
                 )
 
@@ -286,11 +374,17 @@ def classify(
                 existing_map[classified_msg.message_id] = classified_msg
                 done_msgs += 1
                 if not json_output:
-                    click.echo(f"  已分类 {done_msgs}/{len(new_messages)} (重试)...", err=True)
+                    click.echo(
+                        f"  已分类 {done_msgs}/{len(new_messages)} (重试)...", err=True
+                    )
 
             snapshot = [existing_map[mid] for mid in all_msg_ids if mid in existing_map]
             out_path.write_text(
-                json.dumps([r.model_dump(mode="json") for r in snapshot], ensure_ascii=False, indent=2),
+                json.dumps(
+                    [r.model_dump(mode="json") for r in snapshot],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
 
@@ -299,27 +393,41 @@ def classify(
     if not json_output:
         click.echo(f"  已分类 {len(new_results)}/{len(new_messages)}...", err=True)
 
-    results = [existing_map[mid] for mid in [m.message_id for m in messages] if mid in existing_map]
+    results = [
+        existing_map[mid]
+        for mid in [m.message_id for m in messages]
+        if mid in existing_map
+    ]
 
     counts = {}
     for r in results:
         counts[r.category.value] = counts.get(r.category.value, 0) + 1
 
     if json_output:
-        click.echo(json.dumps({
-            "ok": True,
-            "data": {
-                "date": dt.isoformat(),
-                "total": len(results),
-                "new": len(new_results),
-                "existing": len(existing),
-                "distribution": counts,
-                "classified": [r.model_dump(mode="json") for r in results],
-            },
-            "message": f"分类完成，新增 {len(new_results)} 条，总计 {len(results)} 条",
-        }, ensure_ascii=False, indent=2))
+        click.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "data": {
+                        "date": dt.isoformat(),
+                        "total": len(results),
+                        "new": len(new_results),
+                        "existing": len(existing),
+                        "distribution": counts,
+                        "classified": [r.model_dump(mode="json") for r in results],
+                    },
+                    "message": (
+                        f"分类完成，新增 {len(new_results)} 条，总计 {len(results)} 条"
+                    ),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
-        click.echo(f"\n{dt} 分类完成: 新增 {len(new_results)} 条，总计 {len(results)} 条")
+        click.echo(
+            f"\n{dt} 分类完成: 新增 {len(new_results)} 条，总计 {len(results)} 条"
+        )
         for cat, cnt in sorted(counts.items(), key=lambda x: x[1], reverse=True):
             click.echo(f"  {cat}: {cnt} 条")
         click.echo(f"\n结果已保存: {out_path}")

@@ -174,19 +174,19 @@ def _analyze_opinion(
     provider_name: str | None,
 ) -> OpinionNode | None:
     from stock_news.common.llm.client import chat_json, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("opinion")
 
-    prompt = render_prompt(
+    messages = render_prompt_messages(
         "opinion",
         sender=msg.sender,
         raw_content=msg.raw_content,
         history=history_text or "(无历史观点)",
     )
     result = chat_json(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )
@@ -204,19 +204,19 @@ def _review_opinion(
     provider_name: str | None,
 ) -> OpinionNode | None:
     from stock_news.common.llm.client import chat_json, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("opinion")
 
-    prompt = render_prompt(
+    messages = render_prompt_messages(
         "opinion",
         sender=msg.sender,
         raw_content=msg.raw_content,
         history=history_text or "(无历史观点)",
     )
     result = chat_json(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=False,
     )
@@ -235,7 +235,7 @@ def _analyze_opinion_batch(
     provider_name: str | None,
 ) -> dict[int, OpinionNode | None]:
     from stock_news.common.llm.client import chat_json_list, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("opinion")
@@ -247,14 +247,14 @@ def _analyze_opinion_batch(
         lines.append(f"[{seq}]\n{content}")
         msg_map[seq] = msg
 
-    prompt = render_prompt(
+    messages = render_prompt_messages(
         "opinion_batch",
         sender=sender,
         history=history_text or "(无历史观点)",
         messages="\n\n".join(lines),
     )
     results = chat_json_list(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )

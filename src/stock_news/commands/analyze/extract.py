@@ -140,18 +140,18 @@ def _recommendation_from_item(
 
 def _extract_by_llm(msg: RawMessage, provider_name: str | None) -> list[Recommendation]:
     from stock_news.common.llm.client import chat_json, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("extract")
 
-    prompt = render_prompt(
+    messages = render_prompt_messages(
         "extract",
         sender=msg.sender,
         raw_content=msg.raw_content,
     )
     result = chat_json(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )
@@ -173,7 +173,7 @@ def _extract_batch_by_llm(
 ) -> dict[int, list[Recommendation]]:
     """批量抽取，返回 {原始index: [Recommendation]}."""
     from stock_news.common.llm.client import chat_json_list, get_provider_for_task
-    from stock_news.common.llm.prompts import render_prompt
+    from stock_news.common.llm.prompts import render_prompt_messages
 
     if not provider_name:
         provider_name, _ = get_provider_for_task("extract")
@@ -184,9 +184,9 @@ def _extract_batch_by_llm(
         lines.append(f"[{seq}] 发送人: {msg.sender}\n{msg.raw_content[:500]}")
         idx_map[seq] = (orig_idx, msg)
 
-    prompt = render_prompt("extract_batch", messages="\n\n".join(lines))
+    messages = render_prompt_messages("extract_batch", messages="\n\n".join(lines))
     results = chat_json_list(
-        [{"role": "user", "content": prompt}],
+        messages,
         provider_name=provider_name,
         disable_thinking=True,
     )
