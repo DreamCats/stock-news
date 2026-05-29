@@ -37,6 +37,16 @@ def _load_existing_ids(raw_dir: Path) -> set[str]:
     return ids
 
 
+def _load_file_messages(path: Path) -> list[RawMessage]:
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return [RawMessage.model_validate(item) for item in data]
+    except Exception:
+        return []
+
+
 def save_messages(
     messages: list[RawMessage],
     cfg_data_dir: str,
@@ -48,37 +58,47 @@ def save_messages(
     if not messages:
         return 0, 0
 
-    dt = messages[0].message_time.date()
-    raw_dir = _raw_dir(cfg_data_dir, dt)
-    existing_ids = _load_existing_ids(raw_dir)
-
-    new_messages = []
-    skipped = 0
+    by_date: dict[date, list[RawMessage]] = {}
     for msg in messages:
-        if msg.message_id in existing_ids:
-            skipped += 1
-        else:
-            new_messages.append(msg)
-            existing_ids.add(msg.message_id)
+        by_date.setdefault(msg.message_time.date(), []).append(msg)
 
-    if new_messages:
-        filename = f"{source}_{window_start}_{window_end}.json"
+    total_new = 0
+    total_skipped = 0
+    filename = f"{source}_{window_start}_{window_end}.json"
+
+    for dt, date_messages in by_date.items():
+        raw_dir = _raw_dir(cfg_data_dir, dt)
+        existing_ids = _load_existing_ids(raw_dir)
+
+        new_messages = []
+        for msg in date_messages:
+            if msg.message_id in existing_ids:
+                total_skipped += 1
+            else:
+                new_messages.append(msg)
+                existing_ids.add(msg.message_id)
+
+        if not new_messages:
+            continue
+
         filepath = raw_dir / filename
-        data = [m.model_dump(mode="json") for m in new_messages]
+        merged_messages = _load_file_messages(filepath) + new_messages
+        merged_messages.sort(key=lambda msg: msg.message_time)
+        total_new += len(new_messages)
+
+        data = [m.model_dump(mode="json") for m in merged_messages]
         filepath.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
-    return len(new_messages), skipped
+    return total_new, total_skipped
 
 
 def _manifest_path(cfg_data_dir: str, dt: date) -> Path:
     return _raw_dir(cfg_data_dir, dt) / ".fetched.json"
 
 
-def load_fetch_manifest(
-    cfg_data_dir: str, dt: date
-) -> dict[str, set[tuple[str, str]]]:
+def load_fetch_manifest(cfg_data_dir: str, dt: date) -> dict[str, set[tuple[str, str]]]:
     """加载某日的 fetch 切片缓存清单：source → {(start, end), ...}."""
     p = _manifest_path(cfg_data_dir, dt)
     if not p.exists():
@@ -93,9 +113,7 @@ def load_fetch_manifest(
             if not isinstance(slices, list):
                 continue
             out[src] = {
-                (s[0], s[1])
-                for s in slices
-                if isinstance(s, list) and len(s) == 2
+                (s[0], s[1]) for s in slices if isinstance(s, list) and len(s) == 2
             }
     return out
 
