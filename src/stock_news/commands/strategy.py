@@ -15,7 +15,7 @@ from stock_news.commands.analyze._common import (
     parse_date,
 )
 from stock_news.common.config import load
-from stock_news.models import OpinionNode, Recommendation
+from stock_news.models import OpinionNode, Recommendation, StrategyConfig
 
 BULLISH_ACTIONS = {"买入", "加仓", "关注"}
 BEARISH_ACTIONS = {"卖出", "减仓", "回避"}
@@ -94,6 +94,48 @@ def _load_sender_stats(data_dir: str) -> dict[str, dict[str, Any]]:
     }
 
 
+def _load_sender_win_samples(
+    data_dir: str,
+    senders: set[str],
+    limit: int = 3,
+) -> dict[str, list[str]]:
+    if not senders:
+        return {}
+    samples: dict[str, list[str]] = {sender: [] for sender in senders}
+    seen: dict[str, set[str]] = {sender: set() for sender in senders}
+    data_root = Path(data_dir).expanduser()
+    if not data_root.exists():
+        return samples
+
+    for date_dir in sorted(data_root.iterdir(), reverse=True):
+        if all(len(items) >= limit for items in samples.values()):
+            break
+        if not date_dir.is_dir():
+            continue
+        results_path = date_dir / "backtest" / "results.json"
+        if not results_path.exists():
+            continue
+        items = _load_json(results_path, [])
+        if not isinstance(items, list):
+            continue
+        for item in reversed(items):
+            if not isinstance(item, dict):
+                continue
+            sender = str(item.get("sender") or "")
+            if sender not in senders or len(samples[sender]) >= limit:
+                continue
+            if item.get("win_t5") is not True:
+                continue
+            ticker = str(item.get("ticker") or item.get("ts_code") or "").strip()
+            if not ticker or ticker in seen[sender]:
+                continue
+            seen[sender].add(ticker)
+            rec_date = str(item.get("rec_date") or date_dir.name)
+            suffix = rec_date[5:] if len(rec_date) >= 10 else rec_date
+            samples[sender].append(f"{ticker}({suffix})" if suffix else ticker)
+    return samples
+
+
 def _load_state(data_dir: str, dt_str: str) -> dict[str, Any]:
     data = _load_json(_strategy_dir(data_dir, dt_str) / "state.json", {})
     return data if isinstance(data, dict) else {}
@@ -133,10 +175,25 @@ def _rec_time(rec: Recommendation, fallback: datetime) -> datetime:
 def _sender_quality(sender: str, sender_stats: dict[str, dict[str, Any]]) -> float:
     stat = sender_stats.get(sender, {})
     count = int(stat.get("count") or 0)
-    win_rate = float(stat.get("win_rate_t5") or 0)
+    win_rate = stat.get("win_rate_t5")
     excess = float(stat.get("avg_excess_t5") or 0)
-    sample_score = min(count, 10) * 1.5
-    return win_rate * 30 + sample_score + excess * 100
+    win_rate_score = 20.0 if win_rate is None else float(win_rate) * 70
+    sample_score = min(count, 20) * 0.75
+    excess_score = max(min(excess * 100, 20), -20)
+    return win_rate_score + sample_score + excess_score
+
+
+def _target_quality_score(
+    target_recs: list[Recommendation],
+    sender_stats: dict[str, dict[str, Any]],
+) -> float:
+    qualities = [
+        _sender_quality(sender, sender_stats)
+        for sender in {rec.sender for rec in target_recs}
+    ]
+    if not qualities:
+        return 0.0
+    return max(qualities) * 0.7 + (sum(qualities) / len(qualities)) * 0.3
 
 
 def _strength_score(strength: str) -> float:
@@ -230,13 +287,14 @@ def _build_consensus(
             (_rec_time(r, datetime.min) for r in target_recs),
             default=datetime.min,
         )
-        avg_quality = sum(
-            _sender_quality(r.sender, sender_stats) for r in target_recs
-        ) / len(target_recs)
+        quality_score = _target_quality_score(target_recs, sender_stats)
         avg_confidence = sum(r.confidence for r in target_recs) / len(target_recs)
         strength = max(_strength_score(r.strength) for r in target_recs)
         score = round(
-            len(senders) * 20 + avg_quality + strength + avg_confidence * 10,
+            quality_score
+            + strength * 0.6
+            + min(len(senders) - 1, 3) * 3
+            + min(len(target_recs), 5),
             2,
         )
         reasons = _unique_texts(
@@ -266,6 +324,7 @@ def _build_consensus(
                 "reasons": reasons,
                 "evidences": evidences,
                 "risks": risks,
+                "sender_quality_score": round(quality_score, 2),
             }
         )
 
@@ -445,6 +504,46 @@ def _build_theme_clues(
             }
         )
     return sorted(clues, key=lambda item: item["score"], reverse=True)[:top]
+
+
+def _build_sender_credibility(
+    sender_stats: dict[str, dict[str, Any]],
+    samples: dict[str, list[str]],
+    whitelist: list[str],
+    min_count: int,
+    min_win_rate: float,
+    top: int,
+) -> list[dict[str, Any]]:
+    whitelist_set = set(whitelist)
+    rows: list[dict[str, Any]] = []
+    for sender, stat in sender_stats.items():
+        count = int(stat.get("count") or 0)
+        win_rate = stat.get("win_rate_t5")
+        is_whitelisted = sender in whitelist_set
+        if not is_whitelisted:
+            if count < min_count or win_rate is None:
+                continue
+            if float(win_rate) < min_win_rate:
+                continue
+        rows.append(
+            {
+                "sender": sender,
+                "win_rate_t5": win_rate,
+                "count": count,
+                "samples": samples.get(sender, [])[:3],
+                "whitelisted": is_whitelisted,
+            }
+        )
+
+    rows.sort(
+        key=lambda item: (
+            1 if item["whitelisted"] else 0,
+            float(item["win_rate_t5"] or 0),
+            int(item["count"] or 0),
+        ),
+        reverse=True,
+    )
+    return rows[:top]
 
 
 def _fallback_logic(item: dict[str, Any]) -> dict[str, Any]:
@@ -872,7 +971,9 @@ def _build_payload(
     window_minutes: int,
     top: int,
     report_time: datetime,
+    strategy_cfg: StrategyConfig | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    strategy_cfg = strategy_cfg or StrategyConfig()
     dt = parse_date(date_str)
     dt_str = dt.isoformat()
     window_start = report_time - timedelta(minutes=window_minutes)
@@ -917,6 +1018,15 @@ def _build_payload(
         for sender in involved_senders
         if sender in sender_stats
     }
+    win_samples = _load_sender_win_samples(data_dir, set(involved_senders))
+    sender_credibility = _build_sender_credibility(
+        involved_stats,
+        win_samples,
+        strategy_cfg.sender_whitelist,
+        strategy_cfg.sender_min_count,
+        strategy_cfg.sender_min_win_rate,
+        top,
+    )
 
     payload = {
         "report_time": report_time.isoformat(timespec="seconds"),
@@ -935,6 +1045,7 @@ def _build_payload(
         "opinion_changes": opinion_changes,
         "conflicts": conflicts,
         "sender_stats": involved_stats,
+        "sender_credibility": sender_credibility,
         "candidate_trades": candidates,
         "theme_clues": theme_clues,
     }
@@ -965,17 +1076,6 @@ def _primary_clue(item: dict[str, Any]) -> str:
     if not texts:
         return "-"
     return _short_text(str(texts[0]), max_len=56)
-
-
-def _sender_stat_line(sender: str, stat: dict[str, Any]) -> str:
-    count = int(stat.get("count") or 0)
-    if count < 5:
-        return f"- {sender}：样本 {count}，样本不足"
-    return (
-        f"- {sender}：样本 {count}，"
-        f"T+5 胜率 {_pct(stat.get('win_rate_t5'))}，"
-        f"平均超额 {_pct(stat.get('avg_excess_t5'))}"
-    )
 
 
 def _target_type_label(value: str) -> str:
@@ -1109,108 +1209,53 @@ def _render_markdown(payload: dict[str, Any]) -> str:
     lines = [f"# 盘中投研快报 {report_time.strftime('%H:%M')}", ""]
 
     candidates = payload["candidate_trades"]
-    lines.append("## 结论")
-    if candidates:
-        for item in candidates[:3]:
-            why = "、".join(item["why_selected"])
-            lines.append(
-                f"- {item['target_name']}：{_primary_clue(item)}；"
-                f"{why}（score={item['score']}）"
-            )
-    else:
-        lines.append("- 本轮暂无新增可交易个股机会。")
-
-    if candidates:
-        lines.extend(["", "## 强推逻辑"])
-        strategy_lines = _render_strategy_view(payload)
-        if strategy_lines:
-            lines.extend(strategy_lines)
-        else:
-            for item in candidates:
-                lines.extend(_render_logic_block(item))
-
-    theme_clues = payload["theme_clues"]
-    if theme_clues:
-        lines.append("")
-        lines.append("## 主题/板块线索")
-        for item in theme_clues:
-            why = "、".join(item["why_selected"])
-            reason = "；".join(
-                _unique_texts(item["evidences"] or item["reasons"], limit=2)
-            )
-            lines.append(
-                f"- [{_target_type_label(item['target_type'])}] {item['target_name']}："
-                f"{why}，score={item['score']}，{reason or '-'}"
-            )
-
-    lines.extend(["", "## 窗口累计可交易机会"])
-    lines.append("| 标的 | score | confidence | 推荐人 | 核心证据 | 风险 |")
-    lines.append("| --- | ---: | ---: | --- | --- | --- |")
+    lines.append("## 推荐个股")
+    lines.append("| 标的 | Score | 推荐人 | 核心证据 |")
+    lines.append("| --- | ---: | --- | --- |")
     for item in candidates:
         senders = "、".join(item["senders"][:5])
         if len(item["senders"]) > 5:
             senders += f" 等{len(item['senders'])}人"
         clue = "；".join(_unique_texts(item["evidences"] or item["reasons"], limit=2))
-        risks = "；".join(_unique_texts(item["risks"], limit=2))
         clue = clue or "-"
-        risks = risks or "-"
         lines.append(
             "| "
             + " | ".join(
                 [
                     _cell(item["target_name"]),
                     _cell(item["score"]),
-                    _pct(item.get("confidence")),
                     _cell(senders),
                     _cell(clue),
-                    _cell(risks),
                 ]
             )
             + " |"
         )
     if not candidates:
-        lines.append("| - | - | - | - | 本轮无新增可交易个股 | - |")
-
-    lines.extend(["", "## 共识增强"])
-    if payload["top_consensus"]:
-        for item in payload["top_consensus"]:
-            senders = "、".join(item["senders"])
-            lines.append(
-                f"- [{_target_type_label(item['target_type'])}] {item['target_name']}："
-                f"{senders}，score={item['score']}"
-            )
-    else:
-        lines.append("- 本轮暂无多人共识。")
-
-    lines.extend(["", "## 观点变化"])
-    if payload["opinion_changes"]:
-        for item in payload["opinion_changes"]:
-            lines.append(
-                f"- [{_update_type_label(item['update_type'])}]"
-                f"[{_stance_label(item['stance'])}] "
-                f"{item['sender']} -> {item['topic_key']}：{item['summary']}"
-            )
-    else:
-        lines.append("- 本轮暂无显著观点变化。")
+        lines.append("| - | - | - | 本轮无新增可交易个股 |")
 
     lines.extend(["", "## 推荐人可信度"])
-    if payload["sender_stats"]:
-        for sender, stat in payload["sender_stats"].items():
-            lines.append(_sender_stat_line(sender, stat))
+    lines.append("| 推荐人 | 胜率 | 样本数 | 最近命中样本 |")
+    lines.append("| --- | ---: | ---: | --- |")
+    if payload["sender_credibility"]:
+        for item in payload["sender_credibility"]:
+            samples = "、".join(item.get("samples") or []) or "-"
+            sender = str(item["sender"])
+            if item.get("whitelisted"):
+                sender = f"{sender}（白名单）"
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _cell(sender),
+                        _pct(item.get("win_rate_t5")),
+                        _cell(item.get("count")),
+                        _cell(samples),
+                    ]
+                )
+                + " |"
+            )
     else:
-        lines.append("- 本轮涉及推荐人暂无 30d 回测样本。")
-
-    lines.extend(["", "## 原始线索"])
-    clue_items = payload["candidate_trades"][:3] + payload["theme_clues"][:2]
-    for item in clue_items:
-        clue = "；".join(
-            _unique_texts(item.get("evidences") or item.get("reasons") or [], limit=2)
-        )
-        clue = clue or "-"
-        senders = "、".join(item.get("senders", [])[:3])
-        lines.append(f"- {item['target_name']} / {senders}：{clue}")
-    if not clue_items:
-        lines.append("- 无。")
+        lines.append("| - | - | - | 本轮涉及推荐人暂无满足阈值的回测样本 |")
 
     return "\n".join(lines) + "\n"
 
@@ -1232,6 +1277,7 @@ def generate(
         window_minutes,
         top,
         report_time,
+        getattr(cfg, "strategy", StrategyConfig()),
     )
     _attach_candidate_logic(payload, use_llm, provider_name)
     markdown = _render_markdown(payload)

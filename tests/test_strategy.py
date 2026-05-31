@@ -100,9 +100,12 @@ def test_strategy_generate_writes_payload_markdown_and_state(
     assert saved["candidate_trades"][0]["logic"]["source"] == "template"
     markdown = strategy_md.read_text(encoding="utf-8")
     assert "盘中投研快报" in markdown
-    assert "## 强推逻辑" in markdown
-    assert "给老板的判断" in markdown
-    assert "为什么排前" in markdown
+    assert "## 推荐个股" in markdown
+    assert "| 标的 | Score | 推荐人 | 核心证据 |" in markdown
+    assert "## 推荐人可信度" in markdown
+    assert "## 强推逻辑" not in markdown
+    assert "confidence" not in markdown
+    assert "风险" not in markdown
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["message_ids"] == ["msg-1"]
 
@@ -148,12 +151,9 @@ def test_strategy_separates_stock_trades_from_theme_clues(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "## 主题/板块线索" in markdown
-    assert "国产算力" in markdown
-    assert "[主题]" in markdown
-    assert "[theme]" not in markdown
+    assert "## 主题/板块线索" not in markdown
+    assert "国产算力" not in markdown
     assert "| 寒武纪 |" in markdown
-    assert "| 国产算力 |" not in markdown
 
 
 def test_strategy_ranks_window_cumulative_candidates_but_tracks_updates(
@@ -221,7 +221,75 @@ def test_strategy_ranks_window_cumulative_candidates_but_tracks_updates(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "## 窗口累计可交易机会" in markdown
+    assert "## 推荐个股" in markdown
+
+
+def test_strategy_renders_sender_credibility_with_samples_and_whitelist(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    today = date.today().isoformat()
+    now = datetime.now().replace(microsecond=0)
+    high = _rec("msg-1", now - timedelta(minutes=5), sender="高胜率推荐人")
+    low = _rec(
+        "msg-2",
+        now - timedelta(minutes=4),
+        target_name="白名单标的",
+        sender="白名单推荐人",
+    )
+    _write_json(
+        tmp_path / today / "extracted" / "recommendations.json",
+        [high.model_dump(mode="json"), low.model_dump(mode="json")],
+    )
+    _write_json(tmp_path / today / "opinions" / "opinions.json", [])
+    _write_json(
+        tmp_path / "backtest_summary" / "sender_stats.json",
+        [
+            {"sender": "高胜率推荐人", "count": 8, "win_rate_t5": 0.75},
+            {"sender": "白名单推荐人", "count": 1, "win_rate_t5": 0.2},
+        ],
+    )
+    _write_json(
+        tmp_path / "2026-05-20" / "backtest" / "results.json",
+        [
+            {
+                "sender": "高胜率推荐人",
+                "ticker": "寒武纪",
+                "rec_date": "2026-05-20",
+                "win_t5": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        strategy,
+        "load",
+        lambda: SimpleNamespace(
+            storage=SimpleNamespace(data_dir=str(tmp_path)),
+            strategy=SimpleNamespace(
+                sender_whitelist=["白名单推荐人"],
+                sender_min_count=3,
+                sender_min_win_rate=0.5,
+            ),
+        ),
+    )
+
+    strategy.generate("today", 20, 5, json_output=True)
+    json.loads(capsys.readouterr().out)
+
+    saved = json.loads(
+        (tmp_path / today / "strategy" / "strategy.json").read_text(encoding="utf-8")
+    )
+    assert [item["sender"] for item in saved["sender_credibility"]] == [
+        "白名单推荐人",
+        "高胜率推荐人",
+    ]
+
+    markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
+        encoding="utf-8"
+    )
+    assert "白名单推荐人（白名单）" in markdown
+    assert "寒武纪(05-20)" in markdown
 
 
 def test_strategy_merges_theme_clues_and_dedupes_evidence(
@@ -290,7 +358,7 @@ def test_strategy_merges_theme_clues_and_dedupes_evidence(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "样本 1，样本不足" in markdown
+    assert "本轮涉及推荐人暂无满足阈值的回测样本" in markdown
     assert "100.0%" not in markdown
 
 
@@ -332,7 +400,8 @@ def test_strategy_renders_opinion_labels_in_chinese(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "[首次提出][看多]" in markdown
+    assert "## 推荐个股" in markdown
+    assert "## 观点变化" not in markdown
     assert "[new][bullish]" not in markdown
 
 
@@ -382,8 +451,8 @@ def test_strategy_generate_can_attach_llm_logic(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "算力订单改善带来业绩弹性" in markdown
-    assert "订单改善 → 业绩预期上修 → 市场关注提升" in markdown
+    assert "## 推荐个股" in markdown
+    assert "算力订单改善带来业绩弹性" not in markdown
 
 
 def test_strategy_renders_llm_strategy_view(
@@ -466,14 +535,9 @@ def test_strategy_renders_llm_strategy_view(
     markdown = (tmp_path / today / "strategy" / "strategy.md").read_text(
         encoding="utf-8"
     )
-    assert "### 今日主线" in markdown
-    assert "今天主线集中在 AI PCB" in markdown
-    assert "### 优先关注" in markdown
-    assert "龙头证据更集中" in markdown
-    assert "### 主题篮子" in markdown
-    assert "PCB 钻针篮子" in markdown
-    assert "### 待验证观察" in markdown
-    assert "更像主题跟随" in markdown
+    assert "## 推荐个股" in markdown
+    assert "今天主线集中在 AI PCB" not in markdown
+    assert "### 优先关注" not in markdown
 
 
 def test_strategy_removes_unsupported_numbers_from_strategy_view() -> None:

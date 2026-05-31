@@ -167,9 +167,16 @@ class DeliveryConfig(BaseModel):
     routes: dict[str, DeliveryRouteConfig] = Field(default_factory=dict)
 
 
+class StrategyConfig(BaseModel):
+    sender_whitelist: list[str] = Field(default_factory=list)
+    sender_min_count: int = 3
+    sender_min_win_rate: float = 0.5
+
+
 class AppConfig(BaseModel):
     api: APIConfig = APIConfig()
     llm: LLMConfig = LLMConfig()
     storage: StorageConfig = StorageConfig()
     schedule: ScheduleConfig = ScheduleConfig()
     delivery: DeliveryConfig = DeliveryConfig()
+    strategy: StrategyConfig = StrategyConfig()
