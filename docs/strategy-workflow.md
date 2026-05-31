@@ -45,7 +45,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 - 读取 recommendations、opinions、sender_stats。
 - 生成中间策略结构 `strategy/strategy.json`。
 - 生成可投递内容 `strategy/strategy.md`。
-- 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做强推逻辑链。
+- 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做逻辑解释。
 
 不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活由 workflow 显式编排。
 
@@ -188,14 +188,9 @@ sender_quality =
 
 LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 
-`--with-llm` 仍可生成策略主线和逻辑解释，但这些内容只保留在
+`--with-llm` 仍可为候选标的生成逻辑解释，但这些内容只保留在
 `strategy.json`，老板版 Markdown 不展示：
 
-- `strategy_view.market_summary`：今日最重要的主线，以及为什么这些线索集中出现。
-- `strategy_view.mainlines`：主线拆解、相关标的、验证点。
-- `strategy_view.priority_targets`：最值得优先看的 2-4 个标的。
-- `strategy_view.baskets`：同主题、同证据、同推荐逻辑的标的合并为主题篮子。
-- `strategy_view.watchlist`：证据薄、单条推荐、主题跟随的待验证观察。
 - `strong_reason`：为什么优先看这个标的。
 - `boss_pitch`：写给老板看的连续判断，讲清变化、传导、为什么现在值得看、证伪点。
 - `score_driver`：解释排序靠前的结构化原因，而不是复述分数。

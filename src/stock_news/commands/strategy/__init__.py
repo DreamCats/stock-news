@@ -6,7 +6,7 @@ from stock_news.common.config import load
 
 from . import entrypoint as _entrypoint
 from . import llm as _llm_module
-from .llm import _generate_llm_logic, _sanitize_strategy_view, _texts_for_fact_check
+from .llm import _generate_llm_logic
 
 
 def generate(
@@ -34,6 +34,4 @@ __all__ = [
     "generate",
     "load",
     "_generate_llm_logic",
-    "_sanitize_strategy_view",
-    "_texts_for_fact_check",
 ]

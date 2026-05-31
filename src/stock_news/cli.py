@@ -391,7 +391,7 @@ def strategy(ctx: click.Context) -> None:
     show_default=True,
     help="最多输出候选机会数",
 )
-@click.option("--with-llm", is_flag=True, help="使用 LLM 生成强推逻辑链")
+@click.option("--with-llm", is_flag=True, help="使用 LLM 生成候选标的逻辑解释")
 @click.option("--provider", "-p", help="指定 LLM provider")
 @click.pass_context
 def strategy_generate(
@@ -455,7 +455,11 @@ def workflow(ctx: click.Context) -> None:
     help="fetch 切片小时数",
 )
 @click.option("--workers", type=int, default=4, show_default=True, help="fetch 并发数")
-@click.option("--strategy-llm", is_flag=True, help="策略报告使用 LLM 生成强推逻辑链")
+@click.option(
+    "--strategy-llm",
+    is_flag=True,
+    help="策略报告使用 LLM 生成候选标的逻辑解释",
+)
 @click.option("--execute", is_flag=True, help="真实执行；不加时只展示 dry-run 计划")
 @click.pass_context
 def workflow_run(
