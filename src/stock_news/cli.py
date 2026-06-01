@@ -17,6 +17,7 @@ from stock_news.commands.fetch_cli import fetch
 from stock_news.commands.llm_cli import llm
 from stock_news.commands.market_cli import market
 from stock_news.commands.schedule_cmd import schedule
+from stock_news.commands.source_cli import source
 from stock_news.commands.strategy_cli import strategy
 from stock_news.commands.workflow_cli import workflow
 
@@ -50,6 +51,10 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
       sn analyze show --date today           # 查看分析摘要
 
     \b
+    源头雷达：
+      sn source scan --start 2026-05-01 --end 2026-05-13
+
+    \b
     LLM 管理：
       sn llm add deepseek --base-url ... --model ... --api-key ...
       sn llm list                            # 查看 provider
@@ -77,6 +82,7 @@ def _register_commands() -> None:
     main.add_command(analyze)
     main.add_command(strategy)
     main.add_command(workflow)
+    main.add_command(source)
     main.add_command(llm)
     main.add_command(market)
     main.add_command(config)
