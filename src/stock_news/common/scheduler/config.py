@@ -23,6 +23,7 @@ class ScheduleJob(BaseModel):
     command: str
     every: str | None = None
     at: str | None = None
+    weekdays: str | None = None
     active_hours: str | None = None
     timeout: str | None = None
 
@@ -32,6 +33,7 @@ class ScheduleJob(BaseModel):
             raise ValueError("job 必须且只能配置 every 或 at")
         parse_duration(self.every) if self.every else None
         parse_clock(self.at) if self.at else None
+        parse_weekdays(self.weekdays) if self.weekdays else None
         parse_duration(self.timeout) if self.timeout else None
         if self.active_hours:
             parse_active_hours(self.active_hours)
@@ -101,6 +103,62 @@ def parse_active_hours(value: str) -> tuple[time, time]:
     if len(parts) != 2:
         raise ValueError(f"非法 active_hours，期望 HH:MM-HH:MM: {value}")
     return parse_clock(parts[0]), parse_clock(parts[1])
+
+
+def parse_weekdays(value: str) -> set[int]:
+    """解析 1-5 / mon-fri / 1,3,5 为 ISO weekday 集合."""
+    aliases = {
+        "mon": 1,
+        "monday": 1,
+        "tue": 2,
+        "tuesday": 2,
+        "wed": 3,
+        "wednesday": 3,
+        "thu": 4,
+        "thursday": 4,
+        "fri": 5,
+        "friday": 5,
+        "sat": 6,
+        "saturday": 6,
+        "sun": 7,
+        "sunday": 7,
+    }
+
+    def parse_one(token: str) -> int:
+        normalized = token.strip().lower()
+        if normalized in aliases:
+            return aliases[normalized]
+        try:
+            weekday = int(normalized)
+        except ValueError as exc:
+            raise ValueError(f"非法 weekday: {token}") from exc
+        if weekday < 1 or weekday > 7:
+            raise ValueError(f"weekday 必须在 1-7 之间: {token}")
+        return weekday
+
+    weekdays: set[int] = set()
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_token, end_token = part.split("-", 1)
+            start = parse_one(start_token)
+            end = parse_one(end_token)
+            if start > end:
+                raise ValueError(f"weekday 区间必须从小到大: {part}")
+            weekdays.update(range(start, end + 1))
+        else:
+            weekdays.add(parse_one(part))
+    if not weekdays:
+        raise ValueError("weekdays 不能为空")
+    return weekdays
+
+
+def is_in_weekdays(value: str | None, now: datetime) -> bool:
+    if not value:
+        return True
+    return now.isoweekday() in parse_weekdays(value)
 
 
 def is_in_active_hours(value: str | None, now: datetime) -> bool:

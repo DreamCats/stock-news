@@ -26,7 +26,7 @@ def workflow(ctx: click.Context) -> None:
     type=click.IntRange(min=1),
     default=30,
     show_default=True,
-    help="回测与推荐人统计窗口天数",
+    help="推荐人统计窗口天数",
 )
 @click.option("--source", "-s", default="all", show_default=True, help="fetch 数据源")
 @click.option("--provider", "-p", help="指定 LLM provider")

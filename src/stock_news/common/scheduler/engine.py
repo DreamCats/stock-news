@@ -11,6 +11,7 @@ from stock_news.common.scheduler.config import (
     ScheduleFile,
     ScheduleJob,
     is_in_active_hours,
+    is_in_weekdays,
     parse_clock,
     parse_duration,
 )
@@ -62,6 +63,8 @@ def _as_aware(value: datetime | None, now: datetime) -> datetime | None:
 def is_due(job: ScheduleJob, job_state: JobState, now: datetime) -> tuple[bool, str]:
     if not job_state.enabled:
         return False, "disabled"
+    if not is_in_weekdays(job.weekdays, now):
+        return False, "outside_weekdays"
     if not is_in_active_hours(job.active_hours, now):
         return False, "outside_active_hours"
 

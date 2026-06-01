@@ -47,7 +47,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 - 生成可投递内容 `strategy/strategy.md`。
 - 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做逻辑解释。
 
-不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活由 workflow 显式编排。
+不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活应由工作日收盘后的独立 schedule job 编排。
 
 ### delivery
 
@@ -56,7 +56,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 示例：
 
 ```bash
-sn delivery send --route boss --markdown-file ~/.config/stock-news/data/2026-05-25/strategy/strategy.md
+sn delivery send --route wechat-shortterm --markdown-file ~/.config/stock-news/data/2026-05-25/strategy/strategy.md
 ```
 
 企业微信群机器人通过 `wecom_bot` provider 接入：
@@ -64,7 +64,7 @@ sn delivery send --route boss --markdown-file ~/.config/stock-news/data/2026-05-
 ```bash
 sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx'
 sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
-sn delivery route add boss --target maifeng --target wecom-push-1 --format markdown
+sn delivery route add wechat-shortterm --target maifeng --target wecom-push-1 --format markdown
 ```
 
 ## 20 分钟调度 + 当天累计窗口 Workflow
@@ -76,7 +76,6 @@ fetch
 → classify
 → extract
 → opinion
-→ backtest refresh --as-of today --window-days 30
 → backtest summary --window-days 30
 → strategy generate
 → delivery send
@@ -86,7 +85,7 @@ fetch
 
 ```bash
 sn workflow run --date today --window-minutes 1440
-sn workflow run --execute --delivery-route boss
+sn workflow run --execute --delivery-route wechat-shortterm
 sn workflow status --date today
 ```
 
@@ -97,10 +96,20 @@ sn workflow status --date today
 
 - `fetch` 用当天累计窗口加去重，避免漏消息。
 - `classify/extract/opinion` 都应按 `message_id` 增量处理。
-- `backtest refresh` 补齐过去 30 天推荐里已经成熟的 T+N 窗口；当天推荐通常没有 T+1 结果，只进入策略候选和盘中跟踪，不进入完整回测。
-- `backtest summary` 刷新近 30 天推荐人统计。
+- `backtest summary` 汇总已有回测结果，生成近 30 天推荐人统计。
 - `strategy generate` 读取已有推荐人统计并生成当天累计快报；`has_updates` 仍只由本轮新增推荐或观点变化决定。
 - `delivery` 发送 markdown 产物。
+
+`backtest refresh` 放到独立调度里运行，建议工作日 16:30 执行一次：
+
+```yaml
+jobs:
+  - id: backtest-daily
+    command: cd /path/to/stock-news && uv run sn analyze backtest refresh --as-of today --window-days 30 && uv run sn analyze backtest summary --window-days 30
+    at: "16:30"
+    weekdays: "1-5"
+    timeout: 20m
+```
 
 如果本轮没有新增推荐或观点变化，`strategy` 应输出 `has_updates=false`。workflow 可以选择不发送，或发送极短的“本轮无新增有效推荐”。
 
@@ -252,5 +261,5 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 
 - `opinion` 不展示推荐人胜率。
 - `delivery` 不做策略判断。
-- `strategy generate` 默认不跑 `backtest refresh`。
+- `strategy generate` 和 `workflow run` 默认不跑 `backtest refresh`。
 - 不把 raw message 全文直接送给 strategy LLM。

@@ -109,6 +109,7 @@ def list_cmd(ctx: click.Context) -> None:
                 "command": job.command,
                 "every": job.every,
                 "at": job.at,
+                "weekdays": job.weekdays,
                 "active_hours": job.active_hours,
                 "timeout": job.timeout,
                 "enabled": True if job_state is None else job_state.enabled,
@@ -132,6 +133,8 @@ def list_cmd(ctx: click.Context) -> None:
         return
     for item in jobs:
         cadence = item["every"] or f"at {item['at']}"
+        if item["weekdays"]:
+            cadence = f"{cadence} weekdays={item['weekdays']}"
         enabled = "enabled" if item["enabled"] else "disabled"
         click.echo(
             f"{item['id']} [{enabled}] {cadence} "

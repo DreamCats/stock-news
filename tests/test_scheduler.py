@@ -67,6 +67,32 @@ def test_disabled_job_is_skipped(tmp_path: Path) -> None:
     assert state["off"].total_runs == 0
 
 
+def test_weekdays_job_runs_on_configured_day(tmp_path: Path) -> None:
+    command = f"{shlex.quote(sys.executable)} -c \"print('ok')\""
+    schedule = _schedule(
+        tmp_path,
+        [ScheduleJob(id="weekday", command=command, at="16:30", weekdays="1-5")],
+    )
+
+    summary = tick(schedule, now=datetime(2026, 5, 25, 16, 30, tzinfo=timezone.utc))
+
+    assert summary.due_count == 1
+    assert summary.ran_count == 1
+
+
+def test_weekdays_job_skips_outside_configured_days(tmp_path: Path) -> None:
+    schedule = _schedule(
+        tmp_path,
+        [ScheduleJob(id="weekday", command="echo ok", at="16:30", weekdays="mon-fri")],
+    )
+
+    summary = tick(schedule, now=datetime(2026, 5, 31, 16, 30, tzinfo=timezone.utc))
+
+    assert summary.due_count == 0
+    assert summary.skipped_count == 1
+    assert summary.results == []
+
+
 def test_schedule_command_is_registered_without_alias() -> None:
     result = CliRunner().invoke(main, ["schedule", "--help"])
 

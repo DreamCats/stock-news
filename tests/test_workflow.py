@@ -33,7 +33,6 @@ def test_workflow_run_defaults_to_dry_run() -> None:
         "analyze classify --date 2026-05-25",
         "analyze extract --date 2026-05-25",
         "analyze opinion --date 2026-05-25",
-        "analyze backtest refresh --as-of 2026-05-25 --window-days 30",
         "analyze backtest summary --window-days 30",
         "strategy generate --date 2026-05-25 --window-minutes 1440",
     ]
@@ -93,13 +92,6 @@ def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
     )
     monkeypatch.setattr(
         workflow,
-        "run_backtest_refresh",
-        lambda as_of, window_days, _json: calls.append(
-            ("backtest_refresh", (as_of, window_days))
-        ),
-    )
-    monkeypatch.setattr(
-        workflow,
         "run_backtest_summary",
         lambda _json, top, min_count, window_days: calls.append(
             ("backtest_summary", (top, min_count, window_days))
@@ -148,7 +140,6 @@ def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
         ("classify", "2026-05-25"),
         ("extract", "2026-05-25"),
         ("opinion", "2026-05-25"),
-        ("backtest_refresh", ("2026-05-25", 30)),
         ("backtest_summary", (5, 1, 30)),
         ("strategy_generate", "2026-05-25"),
     ]
@@ -159,7 +150,7 @@ def test_workflow_execute_runs_steps_in_order(tmp_path, monkeypatch) -> None:
     assert state["status"] == "success"
 
 
-def test_workflow_treats_backtest_refresh_as_warning(tmp_path, monkeypatch) -> None:
+def test_workflow_treats_backtest_summary_as_warning(tmp_path, monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
         workflow,
@@ -175,16 +166,11 @@ def test_workflow_treats_backtest_refresh_as_warning(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(workflow, "extract", lambda *_args: calls.append("extract"))
     monkeypatch.setattr(workflow, "opinion", lambda *_args: calls.append("opinion"))
 
-    def fail_backtest_refresh(*_args: object) -> None:
-        calls.append("backtest_refresh")
+    def fail_backtest_summary(*_args: object, **_kwargs: object) -> None:
+        calls.append("backtest_summary")
         raise RuntimeError("您的IP数量超限，最大数量为10个！")
 
-    monkeypatch.setattr(workflow, "run_backtest_refresh", fail_backtest_refresh)
-    monkeypatch.setattr(
-        workflow,
-        "run_backtest_summary",
-        lambda *_args, **_kwargs: calls.append("backtest_summary"),
-    )
+    monkeypatch.setattr(workflow, "run_backtest_summary", fail_backtest_summary)
 
     def fake_strategy_generate(
         date_str: str,
@@ -228,7 +214,6 @@ def test_workflow_treats_backtest_refresh_as_warning(tmp_path, monkeypatch) -> N
         "classify",
         "extract",
         "opinion",
-        "backtest_refresh",
         "backtest_summary",
         "strategy_generate",
     ]
@@ -238,7 +223,7 @@ def test_workflow_treats_backtest_refresh_as_warning(tmp_path, monkeypatch) -> N
     assert state["status"] == "completed_with_warnings"
     assert state["warnings"] == [
         {
-            "step": "backtest_refresh",
+            "step": "backtest_summary",
             "error": "您的IP数量超限，最大数量为10个！",
         }
     ]

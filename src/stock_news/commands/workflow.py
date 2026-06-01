@@ -17,7 +17,7 @@ from stock_news.commands.analyze._common import parse_date
 from stock_news.commands.analyze.classify import classify
 from stock_news.commands.analyze.extract import extract
 from stock_news.commands.analyze.opinion import opinion
-from stock_news.commands.backtest import run_backtest_refresh, run_backtest_summary
+from stock_news.commands.backtest import run_backtest_summary
 from stock_news.commands.fetch import run_fetch
 from stock_news.commands.strategy import generate as strategy_generate
 from stock_news.common.config import load
@@ -115,7 +115,6 @@ def _dry_run_payload(
         f"analyze classify --date {date_str}",
         f"analyze extract --date {date_str}",
         f"analyze opinion --date {date_str}",
-        f"analyze backtest refresh --as-of {date_str} --window-days {window_days}",
         f"analyze backtest summary --window-days {window_days}",
         (
             f"strategy generate --date {date_str} --window-minutes {window_minutes}"
@@ -214,11 +213,6 @@ def run_workflow(
         ),
         ("extract", lambda: extract(normalized_date, provider_name, False), True),
         ("opinion", lambda: opinion(normalized_date, provider_name, False), True),
-        (
-            "backtest_refresh",
-            lambda: run_backtest_refresh(normalized_date, window_days, False),
-            False,
-        ),
         (
             "backtest_summary",
             lambda: run_backtest_summary(

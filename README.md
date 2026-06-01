@@ -124,12 +124,12 @@ sn strategy generate --date today --window-minutes 20 --top 5
 
 ```bash
 sn workflow run --date today --window-minutes 20
-sn workflow run --execute --delivery-route boss
+sn workflow run --execute --delivery-route wechat-shortterm
 sn workflow status --date today
 ```
 
 `workflow run` 默认 dry-run，只展示将执行的步骤；加 `--execute` 后才会真实执行：
-`fetch → classify → extract → opinion → backtest refresh → backtest summary → strategy generate → delivery`。
+`fetch → classify → extract → opinion → backtest summary → strategy generate → delivery`。
 不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送。
 
 ### 投递渠道 `sn delivery`
@@ -138,7 +138,7 @@ sn workflow status --date today
 sn delivery provider add-feishu feishu-main --app-id xxx --app-secret xxx
 sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx'
 sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
-sn delivery route add boss --target maifeng --target wecom-push-1 --format markdown
+sn delivery route add wechat-shortterm --target maifeng --target wecom-push-1 --format markdown
 ```
 
 企业微信群机器人按 webhook 建一个 provider，再建一个 `webhook` target；route 可以同时包含飞书和企业微信 target。
@@ -194,7 +194,7 @@ sn schedule uninstall
 
 持续运行的盘中任务建议把采集和分析拆开：采集每 20 分钟跑当天
 `09:00-23:00` 的窗口；分析继续使用 `--date today`，第二天会自动滚动。
-回测建议单独放到收盘后的一日一次 job，避免盘中反复拉行情。
+回测建议单独放到工作日收盘后的一日一次 job，避免盘中反复拉行情。
 
 ```yaml
 jobs:
@@ -211,8 +211,9 @@ jobs:
     timeout: 20m
 
   - id: backtest-daily
-    command: cd /path/to/stock-news && uv run sn analyze backtest refresh --as-of today --window-days 30
+    command: cd /path/to/stock-news && uv run sn analyze backtest refresh --as-of today --window-days 30 && uv run sn analyze backtest summary --window-days 30
     at: "16:30"
+    weekdays: "1-5"
     timeout: 20m
 ```
 
