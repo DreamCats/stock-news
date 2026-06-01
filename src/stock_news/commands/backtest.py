@@ -16,6 +16,7 @@ from stock_news.models import Recommendation
 
 WINDOWS = [1, 2, 3, 5, 10]
 BENCHMARK = "000300.SH"
+CHECKPOINT_EVERY_REFRESHED = 25
 
 
 def _parse_date(date_str: str) -> date:
@@ -126,7 +127,13 @@ def _backtest_one(
         if w > len(future_dates):
             break
         target_date = future_dates[w - 1]
+        results[f"target_date_t{w}"] = target_date
         if target_date not in price_map:
+            results[f"ret_t{w}"] = None
+            results[f"win_t{w}"] = None
+            results[f"bench_ret_t{w}"] = None
+            results[f"excess_t{w}"] = None
+            results[f"unavailable_t{w}"] = "missing_price"
             continue
 
         ret = (price_map[target_date] - base_close) / base_close
@@ -343,6 +350,20 @@ def _refresh_one_day(
     backtest_cache: dict[tuple[str, str, str, str], dict[str, Any] | None] = {}
     last_progress_at = time.monotonic()
 
+    def save_current_results() -> None:
+        _save_backtest_results(
+            cfg_data_dir,
+            dt,
+            sorted(
+                by_key.values(),
+                key=lambda item: (
+                    str(item.get("message_id", "")),
+                    str(item.get("ticker", "")),
+                    str(item.get("action", "")),
+                ),
+            ),
+        )
+
     if not json_output and label:
         click.echo(f"{label} {dt.isoformat()} 推荐 {len(recs)} 条", err=True)
 
@@ -428,6 +449,8 @@ def _refresh_one_day(
             by_key[key] = result
             stats["refreshed"] += 1
             stats["changed"] = True
+            if stats["refreshed"] % CHECKPOINT_EVERY_REFRESHED == 0:
+                save_current_results()
 
         last_progress_at = _emit_refresh_progress(
             i,
@@ -441,18 +464,7 @@ def _refresh_one_day(
         )
 
     if stats["changed"]:
-        _save_backtest_results(
-            cfg_data_dir,
-            dt,
-            sorted(
-                by_key.values(),
-                key=lambda item: (
-                    str(item.get("message_id", "")),
-                    str(item.get("ticker", "")),
-                    str(item.get("action", "")),
-                ),
-            ),
-        )
+        save_current_results()
 
     if not json_output:
         click.echo(
@@ -679,12 +691,20 @@ def _aggregate_by_sender(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for sender, items in by_sender.items():
         s: dict[str, object] = {"sender": sender, "count": len(items)}
         for w in WINDOWS:
-            wins = [r[f"win_t{w}"] for r in items if f"win_t{w}" in r]
-            rets = [r[f"ret_t{w}"] for r in items if f"ret_t{w}" in r]
-            excess = [
-                r[f"excess_t{w}"] for r in items if r.get(f"excess_t{w}") is not None
+            wins = [
+                r[f"win_t{w}"] for r in items if isinstance(r.get(f"win_t{w}"), bool)
             ]
-            if wins:
+            rets = [
+                r[f"ret_t{w}"]
+                for r in items
+                if isinstance(r.get(f"ret_t{w}"), int | float)
+            ]
+            excess = [
+                r[f"excess_t{w}"]
+                for r in items
+                if isinstance(r.get(f"excess_t{w}"), int | float)
+            ]
+            if wins and rets:
                 s[f"win_rate_t{w}"] = round(sum(wins) / len(wins), 4)
                 s[f"avg_ret_t{w}"] = round(sum(rets) / len(rets), 6)
             if excess:

@@ -4,10 +4,12 @@ import json
 from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
 from click.testing import CliRunner
 
 from stock_news.cli import main
 from stock_news.commands import backtest
+from stock_news.common.market import db, tushare_client
 from stock_news.models import Recommendation
 
 
@@ -236,6 +238,101 @@ def test_backtest_refresh_keeps_multiple_tickers_from_same_message(
         ("multi-1", "测试股份A"),
         ("multi-1", "测试股份B"),
     }
+
+
+def test_backtest_one_marks_missing_price_window_unavailable(monkeypatch) -> None:
+    rec = _rec("missing-price", "2026-05-20")
+
+    monkeypatch.setattr(
+        db,
+        "get_next_n_trade_dates",
+        lambda rec_dt, n: ["20260521", "20260522"],
+    )
+    monkeypatch.setattr(backtest, "_mature_windows", lambda rec_dt, as_of: [1, 2])
+
+    def fake_fetch_daily(ts_code, start_date, end_date):
+        if start_date == "20260520" and end_date == "20260520":
+            return [{"trade_date": "20260520", "close": 10.0}]
+        return [{"trade_date": "20260522", "close": 11.0}]
+
+    monkeypatch.setattr(tushare_client, "fetch_daily", fake_fetch_daily)
+    monkeypatch.setattr(
+        tushare_client,
+        "fetch_index_daily",
+        lambda ts_code, start_date, end_date: [
+            {"trade_date": start_date, "close": 100.0},
+            {"trade_date": end_date, "close": 101.0},
+        ],
+    )
+
+    result = backtest._backtest_one(
+        rec,
+        "000001.SZ",
+        "20260520",
+        as_of=date(2026, 5, 25),
+    )
+
+    assert result is not None
+    assert result["ret_t1"] is None
+    assert result["win_t1"] is None
+    assert result["unavailable_t1"] == "missing_price"
+    assert result["ret_t2"] == 0.1
+    assert backtest._aggregate_by_sender([result])[0]["count"] == 1
+    assert "win_rate_t1" not in backtest._aggregate_by_sender([result])[0]
+
+
+def test_backtest_refresh_checkpoints_before_later_timeout(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    recs = [_rec(f"rec-{i}", "2026-05-20", ticker=f"测试股份{i}") for i in range(3)]
+    _write_recs(tmp_path, "2026-05-20", recs)
+
+    monkeypatch.setattr(backtest, "_mature_windows", lambda rec_dt, as_of: [1])
+    monkeypatch.setattr(
+        backtest,
+        "_resolve_ticker",
+        lambda ticker: {
+            "测试股份0": "000001.SZ",
+            "测试股份1": "000002.SZ",
+            "测试股份2": "000003.SZ",
+        }[ticker],
+    )
+    monkeypatch.setattr(backtest, "CHECKPOINT_EVERY_REFRESHED", 2)
+
+    def fake_backtest_one(rec, ts_code, rec_date, as_of=None):
+        if rec.message_id == "rec-2":
+            raise TimeoutError("timed out")
+        return {
+            "message_id": rec.message_id,
+            "sender": rec.sender,
+            "ticker": rec.ticker,
+            "action": rec.action,
+            "rec_date": rec_date,
+            "ret_t1": 0.01,
+            "win_t1": True,
+        }
+
+    saved: list[list[dict]] = []
+    monkeypatch.setattr(backtest, "_backtest_one", fake_backtest_one)
+    monkeypatch.setattr(
+        backtest,
+        "_save_backtest_results",
+        lambda data_dir, dt, results: saved.append(list(results)),
+    )
+
+    with pytest.raises(TimeoutError):
+        backtest._refresh_one_day(
+            str(tmp_path),
+            date(2026, 5, 20),
+            date(2026, 5, 25),
+            ticker_cache={},
+            mature_cache={},
+            json_output=True,
+        )
+
+    assert len(saved) == 1
+    assert {item["message_id"] for item in saved[0]} == {"rec-0", "rec-1"}
 
 
 def test_backtest_refresh_reports_progress_and_caches_ticker(
