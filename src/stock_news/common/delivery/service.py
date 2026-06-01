@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from stock_news.common.config import load
 from stock_news.common.delivery.feishu_bot import (
     DeliveryMessage,
     DeliveryResult,
+    send_file_message,
     send_message,
+)
+from stock_news.common.delivery.wecom_bot import (
+    send_file_message as send_wecom_file_message,
 )
 from stock_news.common.delivery.wecom_bot import send_message as send_wecom_message
 from stock_news.common.exceptions import ConfigError
@@ -94,6 +99,49 @@ def send_targets(
     results: list[DeliveryResult] = []
     for target_name in target_names:
         result = send_target(target_name, message, idempotency_key)
+        results.append(result)
+        if fail_fast and not result.ok:
+            break
+    return results
+
+
+def send_file_target(
+    target_name: str,
+    file_path: Path,
+    idempotency_key: str | None = None,
+) -> DeliveryResult:
+    target = load_target(target_name)
+    provider = load_provider(target.provider)
+    if provider.type == "feishu_bot":
+        return send_file_message(
+            target.provider,
+            provider,
+            target_name,
+            target,
+            file_path,
+            idempotency_key=idempotency_key,
+        )
+    if provider.type == "wecom_bot":
+        return send_wecom_file_message(provider, target_name, target, file_path)
+    return DeliveryResult(
+        target=target_name,
+        recipient_type=target.kind,
+        recipient_id=target.resolved_id or target.id or target_name,
+        ok=False,
+        error=f"{provider.type} 暂不支持文件附件投递",
+    )
+
+
+def send_file_targets(
+    target_names: list[str],
+    file_path: Path,
+    *,
+    fail_fast: bool = False,
+    idempotency_key: str | None = None,
+) -> list[DeliveryResult]:
+    results: list[DeliveryResult] = []
+    for target_name in target_names:
+        result = send_file_target(target_name, file_path, idempotency_key)
         results.append(result)
         if fail_fast and not result.ok:
             break

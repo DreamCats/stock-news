@@ -8,6 +8,8 @@ from typing import Any
 
 from stock_news.models import OpinionNode
 
+from .excel import write_strategy_xlsx
+
 
 def _date_dir(data_dir: str, dt_str: str) -> Path:
     return Path(data_dir).expanduser() / dt_str
@@ -101,18 +103,20 @@ def _save_outputs(
     payload: dict[str, Any],
     markdown: str,
     state: dict[str, Any],
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     out_dir = _strategy_dir(data_dir, dt_str)
     json_path = out_dir / "strategy.json"
     md_path = out_dir / "strategy.md"
+    xlsx_path = out_dir / "strategy.xlsx"
     state_path = out_dir / "state.json"
     json_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     md_path.write_text(markdown, encoding="utf-8")
+    write_strategy_xlsx(payload, xlsx_path)
     state_path.write_text(
         json.dumps(state, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    return json_path, md_path
+    return json_path, md_path, xlsx_path

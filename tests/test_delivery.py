@@ -386,3 +386,145 @@ def test_delivery_send_markdown(
     assert json.loads(result.output)["data"]["sent"] == 1
     assert sent[0].format == "markdown"
     assert sent[0].title == "日报"
+
+
+def test_delivery_send_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    sent: list[tuple[str, Path]] = []
+
+    def fake_send_file(
+        _provider_name: str,
+        _provider: object,
+        target_name: str,
+        _target: object,
+        file_path: Path,
+        *,
+        idempotency_key: str | None = None,
+    ) -> DeliveryResult:
+        assert idempotency_key is None
+        sent.append((target_name, file_path))
+        return DeliveryResult(
+            target=target_name,
+            recipient_type="user",
+            recipient_id="ou_maifeng",
+            ok=True,
+        )
+
+    monkeypatch.setattr(delivery_service, "send_file_message", fake_send_file)
+    xlsx_path = tmp_path / "strategy.xlsx"
+    xlsx_path.write_bytes(b"xlsx")
+    runner = CliRunner()
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-feishu",
+            "feishu-main",
+            "--app-id",
+            "cli_xxx",
+            "--app-secret",
+            "secret",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-user",
+            "maifeng",
+            "--provider",
+            "feishu-main",
+            "--open-id",
+            "ou_maifeng",
+        ],
+    )
+
+    result = runner.invoke(
+        main,
+        [
+            "--json",
+            "delivery",
+            "send",
+            "--target",
+            "maifeng",
+            "--file",
+            str(xlsx_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["data"]["sent"] == 1
+    assert sent == [("maifeng", xlsx_path)]
+
+
+def test_delivery_send_file_to_wecom(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    sent: list[tuple[str, Path]] = []
+
+    def fake_send_wecom_file(
+        _provider: object,
+        target_name: str,
+        _target: object,
+        file_path: Path,
+    ) -> DeliveryResult:
+        sent.append((target_name, file_path))
+        return DeliveryResult(
+            target=target_name,
+            recipient_type="webhook",
+            recipient_id=target_name,
+            ok=True,
+        )
+
+    monkeypatch.setattr(
+        delivery_service, "send_wecom_file_message", fake_send_wecom_file
+    )
+    xlsx_path = tmp_path / "strategy.xlsx"
+    xlsx_path.write_bytes(b"xlsx")
+    runner = CliRunner()
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-wecom",
+            "wecom-g1",
+            "--webhook-url",
+            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-key",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-webhook",
+            "wecom-g1",
+            "--provider",
+            "wecom-g1",
+        ],
+    )
+
+    result = runner.invoke(
+        main,
+        [
+            "--json",
+            "delivery",
+            "send",
+            "--target",
+            "wecom-g1",
+            "--file",
+            str(xlsx_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["data"]["sent"] == 1
+    assert sent == [("wecom-g1", xlsx_path)]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 from stock_news.commands import strategy
 from stock_news.models import OpinionNode
@@ -57,9 +58,11 @@ def test_strategy_generate_writes_payload_markdown_and_state(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["data"]["has_updates"] is True
+    assert payload["data"]["excel_path"].endswith("strategy.xlsx")
 
     strategy_json = tmp_path / today / "strategy" / "strategy.json"
     strategy_md = tmp_path / today / "strategy" / "strategy.md"
+    strategy_xlsx = tmp_path / today / "strategy" / "strategy.xlsx"
     state_path = tmp_path / today / "strategy" / "state.json"
     saved = json.loads(strategy_json.read_text(encoding="utf-8"))
     assert saved["new_recommendations"][0]["ticker"] == "寒武纪"
@@ -75,6 +78,14 @@ def test_strategy_generate_writes_payload_markdown_and_state(
     assert "## 强推逻辑" not in markdown
     assert "confidence" not in markdown
     assert "风险" not in markdown
+    with ZipFile(strategy_xlsx) as zf:
+        names = set(zf.namelist())
+        assert "xl/worksheets/sheet1.xml" in names
+        assert "xl/worksheets/sheet2.xml" in names
+        sheet1 = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        sheet2 = zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+    assert "寒武纪" in sheet1
+    assert "张三" in sheet2
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["message_ids"] == ["msg-1"]
 

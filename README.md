@@ -113,11 +113,12 @@ sn analyze backtest summary --window-days 30 --min-count 3 --top 20  # 近 30 �
 sn strategy generate --date today --window-minutes 20 --top 5
 ```
 
-默认生成结构化输入和可投递 Markdown：
+默认生成结构化输入、Markdown 和可投递 Excel：
 
 ```text
 ~/.config/stock-news/data/<date>/strategy/strategy.json
 ~/.config/stock-news/data/<date>/strategy/strategy.md
+~/.config/stock-news/data/<date>/strategy/strategy.xlsx
 ```
 
 ### 盘中编排 `sn workflow`
@@ -130,7 +131,7 @@ sn workflow status --date today
 
 `workflow run` 默认 dry-run，只展示将执行的步骤；加 `--execute` 后才会真实执行：
 `fetch → classify → extract → opinion → backtest summary → strategy generate → delivery`。
-不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送。
+不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送；传 delivery 时发送 `strategy.xlsx`。
 
 ### 投递渠道 `sn delivery`
 
@@ -139,9 +140,10 @@ sn delivery provider add-feishu feishu-main --app-id xxx --app-secret xxx
 sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx'
 sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
 sn delivery route add wechat-shortterm --target maifeng --target wecom-push-1 --format markdown
+sn delivery send --target maifeng --file ~/.config/stock-news/data/<date>/strategy/strategy.xlsx
 ```
 
-企业微信群机器人按 webhook 建一个 provider，再建一个 `webhook` target；route 可以同时包含飞书和企业微信 target。
+企业微信群机器人按 webhook 建一个 provider，再建一个 `webhook` target；route 可以同时包含飞书和企业微信 target，文本/Markdown 和文件附件都支持。
 
 ### LLM 管理 `sn llm`
 
@@ -235,7 +237,7 @@ sn --json analyze show --date today
   → sn analyze extract  → recommendations.json（结构化推荐: target_type/target_name/action/confidence/evidence）
   → sn analyze opinion  → opinions.json（观点链: new/reinforce/revise/reverse/withdraw）
   → sn workflow run     → 编排 20 分钟增量链路
-  → sn strategy generate → strategy.md（盘中策略快报: 新增机会 + 共识 + 观点变化）
+  → sn strategy generate → strategy.xlsx（盘中策略快报: 推荐个股 + 推荐人可信度）
 
 Tushare → sn market → SQLite 缓存 → 回测引擎（TODO）
 ```

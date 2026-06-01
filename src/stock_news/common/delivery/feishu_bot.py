@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
@@ -164,6 +166,104 @@ def send_message(
         resp.raise_for_status()
         data = resp.json()
         checked = _check_response(data, "飞书发送消息")
+    except Exception as exc:
+        return DeliveryResult(
+            target=target_name,
+            recipient_type=recipient_type,
+            recipient_id=receive_id,
+            ok=False,
+            error=str(exc),
+        )
+
+    message_id = checked.get("message_id")
+    return DeliveryResult(
+        target=target_name,
+        recipient_type=recipient_type,
+        recipient_id=receive_id,
+        ok=True,
+        message_id=str(message_id) if message_id else None,
+    )
+
+
+def _file_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".xls", ".xlsx"}:
+        return "xls"
+    if suffix in {".doc", ".docx"}:
+        return "doc"
+    if suffix in {".ppt", ".pptx"}:
+        return "ppt"
+    if suffix == ".pdf":
+        return "pdf"
+    return "stream"
+
+
+def upload_file(
+    provider_name: str,
+    provider: DeliveryProviderConfig,
+    file_path: Path,
+) -> str:
+    """上传飞书消息附件并返回 file_key."""
+    token = get_tenant_access_token(provider_name, provider)
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    try:
+        with file_path.open("rb") as f:
+            resp = httpx.post(
+                _url(provider, "/open-apis/im/v1/files"),
+                headers={"Authorization": f"Bearer {token}"},
+                data={
+                    "file_type": _file_type(file_path),
+                    "file_name": file_path.name,
+                },
+                files={"file": (file_path.name, f, mime_type)},
+                timeout=provider.timeout,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        checked = _check_response(data, "飞书上传文件")
+    except httpx.HTTPError as exc:
+        raise APIError(f"飞书上传文件请求失败: {exc}") from exc
+    except ValueError as exc:
+        raise APIError(f"飞书上传文件响应不是合法 JSON: {exc}") from exc
+
+    file_key = checked.get("file_key")
+    if not isinstance(file_key, str) or not file_key:
+        raise APIError("飞书上传文件失败: 响应缺少 file_key")
+    return file_key
+
+
+def send_file_message(
+    provider_name: str,
+    provider: DeliveryProviderConfig,
+    target_name: str,
+    target: DeliveryTargetConfig,
+    file_path: Path,
+    *,
+    idempotency_key: str | None = None,
+) -> DeliveryResult:
+    """上传并向单个 target 发送文件附件."""
+    recipient_type, receive_id_type, receive_id = _recipient(target)
+    try:
+        file_key = upload_file(provider_name, provider, file_path)
+        token = get_tenant_access_token(provider_name, provider)
+        body: dict[str, Any] = {
+            "receive_id": receive_id,
+            "msg_type": "file",
+            "content": json.dumps({"file_key": file_key}, ensure_ascii=False),
+        }
+        if idempotency_key:
+            body["uuid"] = idempotency_key
+
+        resp = httpx.post(
+            _url(provider, "/open-apis/im/v1/messages"),
+            params={"receive_id_type": receive_id_type},
+            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+            timeout=provider.timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        checked = _check_response(data, "飞书发送文件")
     except Exception as exc:
         return DeliveryResult(
             target=target_name,

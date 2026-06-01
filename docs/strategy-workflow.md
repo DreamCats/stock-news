@@ -45,6 +45,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 - 读取 recommendations、opinions、sender_stats。
 - 生成中间策略结构 `strategy/strategy.json`。
 - 生成可投递内容 `strategy/strategy.md`。
+- 生成可投递 Excel `strategy/strategy.xlsx`，包含 `推荐个股` 和 `推荐人可信度` 两个 sheet。
 - 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做逻辑解释。
 
 不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活应由工作日收盘后的独立 schedule job 编排。
@@ -56,7 +57,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 示例：
 
 ```bash
-sn delivery send --route wechat-shortterm --markdown-file ~/.config/stock-news/data/2026-05-25/strategy/strategy.md
+sn delivery send --route wechat-shortterm --file ~/.config/stock-news/data/2026-05-25/strategy/strategy.xlsx
 ```
 
 企业微信群机器人通过 `wecom_bot` provider 接入：
@@ -66,6 +67,8 @@ sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.
 sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
 sn delivery route add wechat-shortterm --target maifeng --target wecom-push-1 --format markdown
 ```
+
+文件附件投递支持飞书和企业微信 webhook target。
 
 ## 20 分钟调度 + 当天累计窗口 Workflow
 
@@ -227,21 +230,12 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 - 判断哪些消息已处理。
 - 直接读取原始敏感消息全文。
 
-## Markdown 输出结构
+## Excel 输出结构
 
-`strategy.md` 只保留两个表：
+`strategy.xlsx` 只保留两个 sheet：
 
-```markdown
-# 盘中策略快报 HH:MM
-
-## 推荐个股
-| 标的 | Score | 推荐人 | 核心证据 |
-| --- | ---: | --- | --- |
-
-## 推荐人可信度
-| 推荐人 | 胜率 | 样本数 | 最近命中样本 |
-| --- | ---: | ---: | --- |
-```
+- `推荐个股`：标的、代码、Score、置信度、推荐人、入选原因、核心证据、风险提示。
+- `推荐人可信度`：推荐人、T+5 胜率、样本数、T+5 均收益、T+5 超额、最近命中样本。
 
 推荐人可信度表默认只展示本轮涉及、且满足 `strategy.sender_min_count`
 和 `strategy.sender_min_win_rate` 的推荐人；`strategy.sender_whitelist`
@@ -253,7 +247,7 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 2. 新增 `strategy` 命令组和 `generate` 子命令。
 3. 增加 strategy state，用于识别本轮新增内容和避免重复发送。
 4. 实现 `strategy.json` 聚合，不调用 LLM，先让排序和字段可测试。
-5. 实现 `strategy.md` 生成，先用模板渲染。
+5. 实现 `strategy.md` / `strategy.xlsx` 生成，先用模板渲染。
 6. 再接入 LLM，对候选集做结论排序和文字归纳。
 7. workflow 中串联 `strategy generate` 和 `delivery send`。
 

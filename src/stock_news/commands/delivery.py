@@ -19,6 +19,7 @@ from stock_news.common.delivery.service import (
     result_payload,
     route_targets,
     routes_data,
+    send_file_targets,
     send_targets,
     targets_data,
 )
@@ -348,6 +349,12 @@ def route_list(ctx: click.Context) -> None:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="读取 Markdown 文件并发送",
 )
+@click.option(
+    "--file",
+    "file_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="上传并发送文件附件（飞书 / 企业微信 provider）",
+)
 @click.option("--title", help="post 标题")
 @click.option(
     "--format",
@@ -363,6 +370,7 @@ def send_cmd(
     text: str | None,
     markdown_text: str | None,
     markdown_file: Path | None,
+    file_path: Path | None,
     title: str | None,
     message_format: str | None,
     idempotency_key: str | None,
@@ -374,13 +382,17 @@ def send_cmd(
         text is not None,
         markdown_text is not None,
         markdown_file is not None,
+        file_path is not None,
     ]
     if sum(content_flags) != 1:
         raise click.ClickException(
-            "--text、--markdown、--markdown-file 必须且只能指定一个"
+            "--text、--markdown、--markdown-file、--file 必须且只能指定一个"
         )
 
-    if markdown_file is not None:
+    if file_path is not None:
+        default_format = "file"
+        message_text = ""
+    elif markdown_file is not None:
         message_text = markdown_file.read_text(encoding="utf-8")
         default_format = "markdown"
     elif markdown_text is not None:
@@ -403,17 +415,25 @@ def send_cmd(
             "markdown" if default_format == "markdown" else route.format
         )
 
-    message = DeliveryMessage(
-        format=cast(MessageFormat, fmt),
-        text=message_text,
-        title=title,
-    )
-    results = send_targets(
-        targets,
-        message,
-        fail_fast=fail_fast,
-        idempotency_key=idempotency_key,
-    )
+    if file_path is not None:
+        results = send_file_targets(
+            targets,
+            file_path,
+            fail_fast=fail_fast,
+            idempotency_key=idempotency_key,
+        )
+    else:
+        message = DeliveryMessage(
+            format=cast(MessageFormat, fmt),
+            text=message_text,
+            title=title,
+        )
+        results = send_targets(
+            targets,
+            message,
+            fail_fast=fail_fast,
+            idempotency_key=idempotency_key,
+        )
 
     payload = result_payload(results)
     if _json_output(ctx):
@@ -443,6 +463,7 @@ def test_cmd(
         text="stock-news delivery 测试消息",
         markdown_text=None,
         markdown_file=None,
+        file_path=None,
         title="stock-news",
         message_format="text",
         idempotency_key=None,

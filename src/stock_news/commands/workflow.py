@@ -21,11 +21,10 @@ from stock_news.commands.backtest import run_backtest_summary
 from stock_news.commands.fetch import run_fetch
 from stock_news.commands.strategy import generate as strategy_generate
 from stock_news.common.config import load
-from stock_news.common.delivery.feishu_bot import DeliveryMessage
 from stock_news.common.delivery.service import (
     result_payload,
     route_targets,
-    send_targets,
+    send_file_targets,
 )
 
 StepFn = Callable[[], None]
@@ -39,9 +38,9 @@ def _workflow_dir(data_dir: str, date_str: str, create: bool = True) -> Path:
     return path
 
 
-def _strategy_paths(data_dir: str, date_str: str) -> tuple[Path, Path]:
+def _strategy_paths(data_dir: str, date_str: str) -> tuple[Path, Path, Path]:
     base = Path(data_dir).expanduser() / date_str / "strategy"
-    return base / "strategy.json", base / "strategy.md"
+    return base / "strategy.json", base / "strategy.md", base / "strategy.xlsx"
 
 
 def _run_step(step: StepFn, capture_output: bool) -> str:
@@ -78,11 +77,10 @@ def _load_strategy_payload(path: Path) -> dict[str, Any]:
 def _delivery_step(
     target_name: str | None,
     route_name: str | None,
-    markdown_path: Path,
-    title: str,
+    file_path: Path,
 ) -> dict[str, Any]:
-    if not markdown_path.exists():
-        raise click.ClickException(f"策略 Markdown 不存在: {markdown_path}")
+    if not file_path.exists():
+        raise click.ClickException(f"策略 Excel 不存在: {file_path}")
 
     if target_name:
         targets = [target_name]
@@ -92,12 +90,7 @@ def _delivery_step(
         route, targets = route_targets(route_name)
         fail_fast = route.fail_fast
 
-    message = DeliveryMessage(
-        format="markdown",
-        text=markdown_path.read_text(encoding="utf-8"),
-        title=title,
-    )
-    results = send_targets(targets, message, fail_fast=fail_fast)
+    results = send_file_targets(targets, file_path, fail_fast=fail_fast)
     return result_payload(results)
 
 
@@ -122,13 +115,9 @@ def _dry_run_payload(
         ),
     ]
     if delivery_target:
-        steps.append(
-            f"delivery send --target {delivery_target} --markdown-file strategy.md"
-        )
+        steps.append(f"delivery send --target {delivery_target} --file strategy.xlsx")
     elif delivery_route:
-        steps.append(
-            f"delivery send --route {delivery_route} --markdown-file strategy.md"
-        )
+        steps.append(f"delivery send --route {delivery_route} --file strategy.xlsx")
 
     return {
         "ok": True,
@@ -185,7 +174,7 @@ def run_workflow(
 
     started_at = datetime.now().replace(microsecond=0)
     started_ts = time.time()
-    strategy_json_path, strategy_md_path = _strategy_paths(
+    strategy_json_path, strategy_md_path, strategy_xlsx_path = _strategy_paths(
         cfg.storage.data_dir,
         normalized_date,
     )
@@ -287,8 +276,7 @@ def run_workflow(
             delivery_result = _delivery_step(
                 delivery_target,
                 delivery_route,
-                strategy_md_path,
-                title=f"盘中投研快报 {normalized_date}",
+                strategy_xlsx_path,
             )
             ok = bool(delivery_result.get("ok"))
         except Exception as exc:
@@ -317,6 +305,7 @@ def run_workflow(
             "has_updates": has_updates,
             "json_path": str(strategy_json_path),
             "markdown_path": str(strategy_md_path),
+            "excel_path": str(strategy_xlsx_path),
         },
         "delivery": delivery_result,
     }

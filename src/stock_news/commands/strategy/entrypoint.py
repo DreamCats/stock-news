@@ -24,7 +24,7 @@ def generate(
     use_llm: bool = False,
     provider_name: str | None = None,
 ) -> None:
-    """生成盘中策略快报 JSON 和 Markdown."""
+    """生成盘中策略快报 JSON、Markdown 和 Excel."""
     cfg = load()
     report_time = datetime.now().replace(microsecond=0)
     payload, state = _build_payload(
@@ -37,7 +37,7 @@ def generate(
     )
     _attach_candidate_logic(payload, use_llm, provider_name)
     markdown = _render_markdown(payload)
-    json_path, md_path = _save_outputs(
+    json_path, md_path, xlsx_path = _save_outputs(
         cfg.storage.data_dir,
         payload["date"],
         payload,
@@ -55,6 +55,7 @@ def generate(
                         "has_updates": payload["has_updates"],
                         "json_path": str(json_path),
                         "markdown_path": str(md_path),
+                        "excel_path": str(xlsx_path),
                     },
                 },
                 ensure_ascii=False,
@@ -62,5 +63,6 @@ def generate(
         )
     else:
         click.echo(f"策略快报已生成: {md_path}")
+        click.echo(f"Excel 已生成: {xlsx_path}")
         if not payload["has_updates"]:
             click.echo("本轮无新增有效机会。")

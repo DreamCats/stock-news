@@ -17,7 +17,7 @@ def generate(
     use_llm: bool = False,
     provider_name: str | None = None,
 ) -> None:
-    """生成盘中策略快报 JSON 和 Markdown."""
+    """生成盘中策略快报 JSON、Markdown 和 Excel."""
     setattr(_entrypoint, "load", globals()["load"])
     setattr(_llm_module, "_generate_llm_logic", globals()["_generate_llm_logic"])
     _entrypoint.generate(
