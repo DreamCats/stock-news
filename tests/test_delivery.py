@@ -65,6 +65,51 @@ def test_delivery_config_flow_masks_secret(
     assert "very-secret" not in result.output
 
 
+def test_delivery_wecom_config_masks_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    runner = CliRunner()
+    webhook_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-key"
+
+    result = runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-wecom",
+            "wecom-g1",
+            "--webhook-url",
+            webhook_url,
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-webhook",
+            "wecom-g1",
+            "--provider",
+            "wecom-g1",
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(main, ["--json", "delivery", "provider", "list"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["wecom-g1"]["webhook_url"] == "***"
+
+    result = runner.invoke(main, ["--json", "config", "show"])
+    assert result.exit_code == 0
+    assert webhook_url not in result.output
+    assert "secret-key" not in result.output
+
+
 def test_delivery_resolve_email(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -188,6 +233,85 @@ def test_delivery_route_send_fans_out(
     payload = json.loads(result.output)
     assert payload["data"]["sent"] == 2
     assert [item[0] for item in sent] == ["maifeng", "boss"]
+
+
+def test_delivery_route_can_send_to_wecom(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    sent: list[tuple[str, DeliveryMessage]] = []
+
+    def fake_send_wecom(
+        _provider: object,
+        target_name: str,
+        _target: object,
+        message: DeliveryMessage,
+    ) -> DeliveryResult:
+        sent.append((target_name, message))
+        return DeliveryResult(
+            target=target_name,
+            recipient_type="webhook",
+            recipient_id=target_name,
+            ok=True,
+        )
+
+    monkeypatch.setattr(delivery_service, "send_wecom_message", fake_send_wecom)
+    runner = CliRunner()
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-wecom",
+            "wecom-g1",
+            "--webhook-url",
+            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-key",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-webhook",
+            "wecom-g1",
+            "--provider",
+            "wecom-g1",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "route",
+            "add",
+            "daily",
+            "--target",
+            "wecom-g1",
+        ],
+    )
+
+    result = runner.invoke(
+        main,
+        [
+            "--json",
+            "delivery",
+            "send",
+            "--route",
+            "daily",
+            "--markdown",
+            "## 今日摘要\n- A\n- B",
+            "--title",
+            "日报",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["data"]["sent"] == 1
+    assert sent[0][0] == "wecom-g1"
+    assert sent[0][1].format == "markdown"
 
 
 def test_delivery_send_markdown(

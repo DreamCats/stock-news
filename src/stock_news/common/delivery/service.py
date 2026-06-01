@@ -11,6 +11,7 @@ from stock_news.common.delivery.feishu_bot import (
     DeliveryResult,
     send_message,
 )
+from stock_news.common.delivery.wecom_bot import send_message as send_wecom_message
 from stock_news.common.exceptions import ConfigError
 from stock_news.models import (
     DeliveryProviderConfig,
@@ -22,14 +23,13 @@ from stock_news.models import (
 def mask_secret(value: str) -> str:
     if not value:
         return ""
-    if len(value) <= 8:
-        return "***"
-    return value[:3] + "***" + value[-4:]
+    return "***"
 
 
 def provider_data(provider: DeliveryProviderConfig) -> dict[str, object]:
     data = provider.model_dump(mode="json")
     data["app_secret"] = mask_secret(provider.app_secret)
+    data["webhook_url"] = "***" if provider.webhook_url else ""
     return data
 
 
@@ -70,16 +70,18 @@ def send_target(
 ) -> DeliveryResult:
     target = load_target(target_name)
     provider = load_provider(target.provider)
-    if provider.type != "feishu_bot":
-        raise ConfigError(f"暂不支持的 delivery provider 类型: {provider.type}")
-    return send_message(
-        target.provider,
-        provider,
-        target_name,
-        target,
-        message,
-        idempotency_key=idempotency_key,
-    )
+    if provider.type == "feishu_bot":
+        return send_message(
+            target.provider,
+            provider,
+            target_name,
+            target,
+            message,
+            idempotency_key=idempotency_key,
+        )
+    if provider.type == "wecom_bot":
+        return send_wecom_message(provider, target_name, target, message)
+    raise ConfigError(f"暂不支持的 delivery provider 类型: {provider.type}")
 
 
 def send_targets(

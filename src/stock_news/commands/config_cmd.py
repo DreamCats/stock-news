@@ -14,7 +14,9 @@ def _masked(value: object) -> object:
         out: dict[str, object] = {}
         for key, item in value.items():
             lowered = key.lower()
-            if any(word in lowered for word in ("secret", "api_key", "token")):
+            if any(
+                word in lowered for word in ("secret", "api_key", "token", "webhook")
+            ):
                 out[key] = "***" if item else item
             else:
                 out[key] = _masked(item)

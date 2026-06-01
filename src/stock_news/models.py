@@ -134,16 +134,26 @@ class ScheduleConfig(BaseModel):
 
 
 class DeliveryProviderConfig(BaseModel):
-    type: Literal["feishu_bot"]
-    app_id: str
-    app_secret: str
+    type: Literal["feishu_bot", "wecom_bot"]
+    app_id: str = ""
+    app_secret: str = ""
+    webhook_url: str = ""
     base_url: str = "https://open.feishu.cn"
     timeout: int = 30
+
+    @model_validator(mode="after")
+    def _validate_provider(self) -> DeliveryProviderConfig:
+        if self.type == "feishu_bot":
+            if not self.app_id or not self.app_secret:
+                raise ValueError("feishu_bot provider 必须配置 app_id 和 app_secret")
+        elif not self.webhook_url:
+            raise ValueError("wecom_bot provider 必须配置 webhook_url")
+        return self
 
 
 class DeliveryTargetConfig(BaseModel):
     provider: str
-    kind: Literal["user", "chat"]
+    kind: Literal["user", "chat", "webhook"]
     id: str | None = None
     email: str | None = None
     name: str | None = None
@@ -154,6 +164,8 @@ class DeliveryTargetConfig(BaseModel):
         if self.kind == "chat":
             if not self.id:
                 raise ValueError("chat target 必须配置 id/chat_id")
+        elif self.kind == "webhook":
+            pass
         elif not any([self.id, self.email, self.name, self.resolved_id]):
             raise ValueError("user target 必须配置 open_id、email、name 或 resolved_id")
         return self

@@ -80,6 +80,31 @@ def provider_add_feishu(
         click.echo(f"provider 已保存: {name}")
 
 
+@provider_group.command("add-wecom")
+@click.argument("name")
+@click.option("--webhook-url", required=True, help="企业微信群机器人 webhook URL")
+@click.option("--timeout", type=int, default=30, show_default=True)
+@click.pass_context
+def provider_add_wecom(
+    ctx: click.Context,
+    name: str,
+    webhook_url: str,
+    timeout: int,
+) -> None:
+    """添加企业微信群机器人 provider."""
+    cfg = load()
+    cfg.delivery.providers[name] = DeliveryProviderConfig(
+        type="wecom_bot",
+        webhook_url=webhook_url,
+        timeout=timeout,
+    )
+    save(cfg)
+    if _json_output(ctx):
+        _echo_json({"ok": True, "provider": name, "message": "provider 已保存"})
+    else:
+        click.echo(f"provider 已保存: {name}")
+
+
 @provider_group.command("list")
 @click.pass_context
 def provider_list(ctx: click.Context) -> None:
@@ -92,7 +117,10 @@ def provider_list(ctx: click.Context) -> None:
         click.echo("未配置 delivery provider")
         return
     for name, p in data.items():
-        click.echo(f"{name}: {p['type']} app_id={p['app_id']}")
+        if p["type"] == "feishu_bot":
+            click.echo(f"{name}: {p['type']} app_id={p['app_id']}")
+        else:
+            click.echo(f"{name}: {p['type']} webhook={p['webhook_url']}")
 
 
 @delivery.group(name="target")
@@ -166,6 +194,38 @@ def target_add_chat(
         click.echo(f"chat target 已保存: {name}")
 
 
+@target_group.command("add-webhook")
+@click.argument("name")
+@click.option(
+    "--provider", "provider_name", required=True, help="delivery provider 名称"
+)
+@click.option("--display-name", help="备注名")
+@click.pass_context
+def target_add_webhook(
+    ctx: click.Context,
+    name: str,
+    provider_name: str,
+    display_name: str | None,
+) -> None:
+    """添加 webhook target（如企业微信群机器人）."""
+    ensure_provider_exists(provider_name)
+    cfg = load()
+    provider = cfg.delivery.providers[provider_name]
+    if provider.type != "wecom_bot":
+        raise click.ClickException("add-webhook 仅支持 wecom_bot provider")
+    cfg.delivery.targets[name] = DeliveryTargetConfig(
+        provider=provider_name,
+        kind="webhook",
+        name=display_name,
+        resolved_id=name,
+    )
+    save(cfg)
+    if _json_output(ctx):
+        _echo_json({"ok": True, "target": name, "message": "webhook target 已保存"})
+    else:
+        click.echo(f"webhook target 已保存: {name}")
+
+
 @target_group.command("resolve")
 @click.argument("name")
 @click.pass_context
@@ -181,6 +241,8 @@ def target_resolve(ctx: click.Context, name: str) -> None:
 
     if target.kind == "chat":
         target.resolved_id = target.id
+    elif target.kind == "webhook":
+        target.resolved_id = target.id or name
     elif target.id:
         target.resolved_id = target.id
     elif target.email and provider.type == "feishu_bot":

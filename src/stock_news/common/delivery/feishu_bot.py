@@ -32,7 +32,7 @@ class DeliveryMessage:
 @dataclass(frozen=True)
 class DeliveryResult:
     target: str
-    recipient_type: Literal["chat", "user"]
+    recipient_type: Literal["chat", "user", "webhook"]
     recipient_id: str
     ok: bool
     message_id: str | None = None

@@ -59,6 +59,14 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 sn delivery send --route boss --markdown-file ~/.config/stock-news/data/2026-05-25/strategy/strategy.md
 ```
 
+企业微信群机器人通过 `wecom_bot` provider 接入：
+
+```bash
+sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx'
+sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
+sn delivery route add boss --target maifeng --target wecom-push-1 --format markdown
+```
+
 ## 20 分钟调度 + 当天累计窗口 Workflow
 
 盘中每 20 分钟执行一轮：

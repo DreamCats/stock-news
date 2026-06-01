@@ -132,6 +132,17 @@ sn workflow status --date today
 `fetch → classify → extract → opinion → backtest refresh → backtest summary → strategy generate → delivery`。
 不传 `--delivery-target/--delivery-route` 时只生成策略快报，不发送。
 
+### 投递渠道 `sn delivery`
+
+```bash
+sn delivery provider add-feishu feishu-main --app-id xxx --app-secret xxx
+sn delivery provider add-wecom wecom-push-1 --webhook-url 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx'
+sn delivery target add-webhook wecom-push-1 --provider wecom-push-1
+sn delivery route add boss --target maifeng --target wecom-push-1 --format markdown
+```
+
+企业微信群机器人按 webhook 建一个 provider，再建一个 `webhook` target；route 可以同时包含飞书和企业微信 target。
+
 ### LLM 管理 `sn llm`
 
 ```bash
