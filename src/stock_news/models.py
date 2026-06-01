@@ -124,6 +124,10 @@ class StorageConfig(BaseModel):
     format: str = "json"
 
 
+class MarketConfig(BaseModel):
+    tushare_api_url: str = ""
+
+
 class ScheduleConfig(BaseModel):
     pid_file: str = "~/.config/stock-news/scheduler.pid"
     log_dir: str = "~/.config/stock-news/logs"
@@ -177,6 +181,7 @@ class AppConfig(BaseModel):
     api: APIConfig = APIConfig()
     llm: LLMConfig = LLMConfig()
     storage: StorageConfig = StorageConfig()
+    market: MarketConfig = MarketConfig()
     schedule: ScheduleConfig = ScheduleConfig()
     delivery: DeliveryConfig = DeliveryConfig()
     strategy: StrategyConfig = StrategyConfig()

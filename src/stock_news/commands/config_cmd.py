@@ -38,6 +38,7 @@ def show(json_output: bool) -> None:
         click.echo(f"超时: {cfg.api.timeout}s")
         click.echo(f"数据目录: {cfg.storage.data_dir}")
         click.echo(f"存储格式: {cfg.storage.format}")
+        click.echo(f"Tushare API: {cfg.market.tushare_api_url or '直连'}")
         if cfg.delivery.providers:
             click.echo(f"Delivery providers: {', '.join(cfg.delivery.providers)}")
 
