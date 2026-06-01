@@ -162,6 +162,8 @@ def _build_sender_credibility(
                 "sender": sender,
                 "win_rate_t5": win_rate,
                 "count": count,
+                "avg_ret_t5": stat.get("avg_ret_t5"),
+                "avg_excess_t5": stat.get("avg_excess_t5"),
                 "samples": samples.get(sender, [])[:3],
                 "whitelisted": is_whitelisted,
             }

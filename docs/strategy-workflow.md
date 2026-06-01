@@ -45,7 +45,7 @@ sn strategy generate --date today --window-minutes 1440 --top 5
 - 读取 recommendations、opinions、sender_stats。
 - 生成中间策略结构 `strategy/strategy.json`。
 - 生成可投递内容 `strategy/strategy.md`。
-- 生成可投递 Excel `strategy/strategy.xlsx`，包含 `推荐个股` 和 `推荐人可信度` 两个 sheet。
+- 生成可投递 Excel `strategy/strategy.xlsx`，包含 `推荐个股`、`推荐人可信度` 和 `Score说明` 三个 sheet。
 - 默认不调用 LLM；加 `--with-llm` 后，只把压缩后的 Top N 候选送给 LLM 做逻辑解释。
 
 不建议 `strategy generate` 默认运行回测刷新，因为它可能拉行情数据、耗时更长。这个重活应由工作日收盘后的独立 schedule job 编排。
@@ -232,10 +232,11 @@ LLM 输入是压缩后的 strategy payload，而不是原始文件全文。
 
 ## Excel 输出结构
 
-`strategy.xlsx` 只保留两个 sheet：
+`strategy.xlsx` 保留两个数据 sheet 和一个说明 sheet：
 
-- `推荐个股`：标的、代码、Score、置信度、推荐人、入选原因、核心证据、风险提示。
+- `推荐个股`：标的、代码、Score、推荐人、入选原因、核心证据。
 - `推荐人可信度`：推荐人、T+5 胜率、样本数、T+5 均收益、T+5 超额、最近命中样本。
+- `Score说明`：解释 Score 的组成和计算规则。
 
 推荐人可信度表默认只展示本轮涉及、且满足 `strategy.sender_min_count`
 和 `strategy.sender_min_win_rate` 的推荐人；`strategy.sender_whitelist`

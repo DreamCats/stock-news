@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from zipfile import ZipFile
 
 from stock_news.commands import strategy
+from stock_news.commands.strategy import excel
 from stock_news.models import OpinionNode
 from tests.strategy_helpers import rec as make_rec
 from tests.strategy_helpers import write_json
@@ -44,6 +45,7 @@ def test_strategy_generate_writes_payload_markdown_and_state(
                 "sender": "张三",
                 "count": 8,
                 "win_rate_t5": 0.75,
+                "avg_ret_t5": 0.12,
                 "avg_excess_t5": 0.03,
             }
         ],
@@ -52,6 +54,11 @@ def test_strategy_generate_writes_payload_markdown_and_state(
         strategy,
         "load",
         lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(
+        excel,
+        "get_ts_code",
+        lambda name: "688256.SH" if name == "寒武纪" else None,
     )
 
     strategy.generate("today", 20, 5, json_output=True)
@@ -70,6 +77,8 @@ def test_strategy_generate_writes_payload_markdown_and_state(
     assert saved["candidate_trades"][0]["ticker"] == "寒武纪"
     assert saved["candidate_trades"][0]["target_name"] == "寒武纪"
     assert saved["candidate_trades"][0]["logic"]["source"] == "template"
+    assert saved["sender_credibility"][0]["avg_ret_t5"] == 0.12
+    assert saved["sender_credibility"][0]["avg_excess_t5"] == 0.03
     markdown = strategy_md.read_text(encoding="utf-8")
     assert "盘中投研快报" in markdown
     assert "## 推荐个股" in markdown
@@ -82,10 +91,20 @@ def test_strategy_generate_writes_payload_markdown_and_state(
         names = set(zf.namelist())
         assert "xl/worksheets/sheet1.xml" in names
         assert "xl/worksheets/sheet2.xml" in names
+        assert "xl/worksheets/sheet3.xml" in names
         sheet1 = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
         sheet2 = zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+        sheet3 = zf.read("xl/worksheets/sheet3.xml").decode("utf-8")
     assert "寒武纪" in sheet1
+    assert "688256.SH" in sheet1
+    assert "置信度" not in sheet1
+    assert "风险提示" not in sheet1
     assert "张三" in sheet2
+    assert "<v>0.12</v>" in sheet2
+    assert "<v>0.03</v>" in sheet2
+    assert "Score = 推荐人质量分" in sheet3
+    assert "最终Score" in sheet3
+    assert "62.8" in sheet3
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["message_ids"] == ["msg-1"]
 

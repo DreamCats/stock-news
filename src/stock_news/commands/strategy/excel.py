@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from html import escape
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from stock_news.common.market.db import get_ts_code
+
 from .utils import _unique_texts
 
 Cell = tuple[Any, int | None]
+CODE_PATTERN = re.compile(r"^(\d{6}(\.(SH|SZ|BJ))?|\d{1,5}\.HK)$", re.IGNORECASE)
 
 
 def _col_name(index: int) -> str:
@@ -34,6 +38,22 @@ def _text(value: object) -> str:
 
 def _cell(value: Any, style: int | None = None) -> Cell:
     return value, style
+
+
+def _stock_code(item: dict[str, Any]) -> str:
+    raw = str(item.get("ticker") or "").strip()
+    target_name = str(item.get("target_name") or "").strip()
+    if raw and CODE_PATTERN.match(raw):
+        return raw.upper()
+
+    for keyword in (raw, target_name):
+        if not keyword:
+            continue
+        code = get_ts_code(keyword)
+        if code:
+            return code
+
+    return "" if raw == target_name else raw
 
 
 def _sheet_xml(rows: list[list[Cell]], widths: list[int]) -> str:
@@ -78,6 +98,7 @@ def _workbook_xml() -> str:
   <sheets>
     <sheet name="推荐个股" sheetId="1" r:id="rId1"/>
     <sheet name="推荐人可信度" sheetId="2" r:id="rId2"/>
+    <sheet name="Score说明" sheetId="3" r:id="rId3"/>
   </sheets>
 </workbook>
 """
@@ -125,11 +146,9 @@ def _candidate_rows(payload: dict[str, Any]) -> list[list[Cell]]:
             _cell("标的", 1),
             _cell("代码", 1),
             _cell("Score", 1),
-            _cell("置信度", 1),
             _cell("推荐人", 1),
             _cell("入选原因", 1),
             _cell("核心证据", 1),
-            _cell("风险提示", 1),
         ]
     ]
     for item in payload.get("candidate_trades") or []:
@@ -138,17 +157,15 @@ def _candidate_rows(payload: dict[str, Any]) -> list[list[Cell]]:
         rows.append(
             [
                 _cell(item.get("target_name")),
-                _cell(item.get("ticker")),
+                _cell(_stock_code(item)),
                 _cell(item.get("score"), 3),
-                _cell(item.get("confidence"), 2),
                 _cell(senders),
                 _cell(_text(item.get("why_selected"))),
                 _cell(_text(evidences)),
-                _cell(_text(item.get("risks")) or "-"),
             ]
         )
     if len(rows) == 1:
-        rows.append([_cell("本轮无新增可交易个股")] + [_cell(None)] * 7)
+        rows.append([_cell("本轮无新增可交易个股")] + [_cell(None)] * 5)
     return rows
 
 
@@ -182,8 +199,64 @@ def _sender_rows(payload: dict[str, Any]) -> list[list[Cell]]:
     return rows
 
 
+def _score_rows() -> list[list[Cell]]:
+    return [
+        [_cell("项目", 1), _cell("计算规则", 1)],
+        [
+            _cell("总分"),
+            _cell("Score = 推荐人质量分 + 强度分 * 0.6 + 多推荐人加分 + 推荐次数加分"),
+        ],
+        [
+            _cell("推荐人质量分"),
+            _cell("最高推荐人质量 * 0.7 + 平均推荐人质量 * 0.3"),
+        ],
+        [
+            _cell("单个推荐人质量"),
+            _cell("T+5胜率 * 70（无胜率按20） + min(样本数,20) * 0.75 + T+5超额加分"),
+        ],
+        [
+            _cell("T+5超额加分"),
+            _cell("T+5超额 * 100，限制在 -20 到 20 之间"),
+        ],
+        [
+            _cell("强度分"),
+            _cell("强/高/strong=18，中/medium=10，弱/低/low=4，其他=8"),
+        ],
+        [
+            _cell("多推荐人加分"),
+            _cell("min(推荐人数 - 1, 3) * 3"),
+        ],
+        [
+            _cell("推荐次数加分"),
+            _cell("min(同标的推荐次数, 5)"),
+        ],
+        [_cell(None), _cell(None)],
+        [_cell("示例", 1), _cell("计算过程", 1)],
+        [
+            _cell("单个推荐人质量"),
+            _cell("T+5胜率60% * 70 + min(8,20) * 0.75 + T+5超额3% * 100 = 51"),
+        ],
+        [
+            _cell("推荐人质量分"),
+            _cell("只有一个推荐人时，最高质量51 * 0.7 + 平均质量51 * 0.3 = 51"),
+        ],
+        [
+            _cell("强度分"),
+            _cell("强度=高，18 * 0.6 = 10.8"),
+        ],
+        [
+            _cell("共识和次数"),
+            _cell("1个推荐人无多人加分；同标的1条推荐，推荐次数加分=1"),
+        ],
+        [
+            _cell("最终Score"),
+            _cell("51 + 10.8 + 0 + 1 = 62.8"),
+        ],
+    ]
+
+
 def write_strategy_xlsx(payload: dict[str, Any], path: Path) -> None:
-    """写出包含策略两张表的 xlsx 文件."""
+    """写出包含策略表和 Score 说明的 xlsx 文件."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(path, "w", ZIP_DEFLATED) as zf:
         zf.writestr(
@@ -200,6 +273,8 @@ def write_strategy_xlsx(payload: dict[str, Any], path: Path) -> None:
   <Override PartName="/xl/worksheets/sheet1.xml"
     ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet2.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet3.xml"
     ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 </Types>
 """,
@@ -225,6 +300,9 @@ def write_strategy_xlsx(payload: dict[str, Any], path: Path) -> None:
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
     Target="worksheets/sheet2.xml"/>
   <Relationship Id="rId3"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+    Target="worksheets/sheet3.xml"/>
+  <Relationship Id="rId4"
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
     Target="styles.xml"/>
 </Relationships>
@@ -234,9 +312,13 @@ def write_strategy_xlsx(payload: dict[str, Any], path: Path) -> None:
         zf.writestr("xl/styles.xml", _styles_xml())
         zf.writestr(
             "xl/worksheets/sheet1.xml",
-            _sheet_xml(_candidate_rows(payload), [16, 14, 10, 10, 24, 28, 54, 40]),
+            _sheet_xml(_candidate_rows(payload), [16, 14, 10, 24, 28, 54]),
         )
         zf.writestr(
             "xl/worksheets/sheet2.xml",
             _sheet_xml(_sender_rows(payload), [20, 12, 10, 12, 12, 32]),
+        )
+        zf.writestr(
+            "xl/worksheets/sheet3.xml",
+            _sheet_xml(_score_rows(), [20, 88]),
         )
