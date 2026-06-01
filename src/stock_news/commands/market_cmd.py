@@ -9,12 +9,12 @@ import click
 
 def set_token(token: str) -> None:
     from stock_news.common.market.tushare_client import save_token
+
     save_token(token)
     click.echo("Tushare token 已保存")
 
 
 def init(json_output: bool) -> None:
-    from stock_news.common.market import db
     from stock_news.common.market.tushare_client import sync_stock_basic, sync_trade_cal
 
     click.echo("正在同步 stock_basic...", err=True)
@@ -57,9 +57,12 @@ def price(ts_code: str, start_date: str, end_date: str, json_output: bool) -> No
         return
     click.echo(f"{ts_code} 共 {len(rows)} 条日线:")
     for r in rows[-10:]:
-        click.echo(f"  {r['trade_date']}  O:{r['open']}  H:{r['high']}  L:{r['low']}  C:{r['close']}  pct:{r['pct_chg']}%")
+        click.echo(
+            f"  {r['trade_date']}  O:{r['open']}  H:{r['high']}  "
+            f"L:{r['low']}  C:{r['close']}  pct:{r['pct_chg']}%"
+        )
     if len(rows) > 10:
-        click.echo(f"  ... 仅显示最近 10 条")
+        click.echo("  ... 仅显示最近 10 条")
 
 
 def info(json_output: bool) -> None:
@@ -70,4 +73,7 @@ def info(json_output: bool) -> None:
     if json_output:
         click.echo(json.dumps({"stock_basic": n_stocks, "trade_cal": n_cal}))
     else:
-        click.echo(f"stock_basic: {n_stocks} 条\ntrade_cal: {n_cal} 条\n数据库: ~/.config/stock-news/market.db")
+        click.echo(
+            f"stock_basic: {n_stocks} 条\ntrade_cal: {n_cal} 条\n"
+            "数据库: ~/.config/stock-news/market.db"
+        )

@@ -33,16 +33,31 @@ def show_analysis(date_str: str, json_output: bool) -> None:
         cat_counts: dict[str, int] = {}
         for c in classified:
             cat_counts[c.category.value] = cat_counts.get(c.category.value, 0) + 1
-        click.echo(json.dumps({
-            "ok": True,
-            "data": {
-                "date": dt.isoformat(),
-                "classification": {"total": len(classified), "distribution": cat_counts},
-                "recommendations": {"total": len(recs), "items": [r.model_dump(mode="json") for r in recs]},
-                "opinions": {"total": len(opinions), "items": [o.model_dump(mode="json") for o in opinions]},
-            },
-            "message": f"{dt} 分析摘要",
-        }, ensure_ascii=False, indent=2))
+        click.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "data": {
+                        "date": dt.isoformat(),
+                        "classification": {
+                            "total": len(classified),
+                            "distribution": cat_counts,
+                        },
+                        "recommendations": {
+                            "total": len(recs),
+                            "items": [r.model_dump(mode="json") for r in recs],
+                        },
+                        "opinions": {
+                            "total": len(opinions),
+                            "items": [o.model_dump(mode="json") for o in opinions],
+                        },
+                    },
+                    "message": f"{dt} 分析摘要",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         click.echo(f"=== {dt} 分析摘要 ===\n")
 
@@ -51,7 +66,9 @@ def show_analysis(date_str: str, json_output: bool) -> None:
             for c in classified:
                 cat_counts[c.category.value] = cat_counts.get(c.category.value, 0) + 1
             click.echo(f"消息分类 ({len(classified)} 条):")
-            for cat, cnt in sorted(cat_counts.items(), key=lambda x: x[1], reverse=True):
+            for cat, cnt in sorted(
+                cat_counts.items(), key=lambda x: x[1], reverse=True
+            ):
                 click.echo(f"  {cat}: {cnt} 条")
         else:
             click.echo("消息分类: 未运行")
@@ -70,6 +87,9 @@ def show_analysis(date_str: str, json_output: bool) -> None:
         if opinions:
             click.echo(f"观点链 ({len(opinions)} 条):")
             for o in opinions:
-                click.echo(f"  [{o.update_type}][{o.stance}] {o.sender} -> {o.topic_key}: {o.summary}")
+                click.echo(
+                    f"  [{o.update_type}][{o.stance}] {o.sender} "
+                    f"-> {o.topic_key}: {o.summary}"
+                )
         else:
             click.echo("观点链: 未运行")

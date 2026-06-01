@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 from stock_news.common.config import CONFIG_DIR
 
@@ -70,13 +69,14 @@ def _conn() -> sqlite3.Connection:
 # -- stock_basic --
 
 
-def upsert_stock_basic(rows: list[dict]) -> int:
+def upsert_stock_basic(rows: list[dict[str, object]]) -> int:
     conn = _conn()
     with conn:
         conn.executemany(
             """INSERT OR REPLACE INTO stock_basic
                (ts_code, symbol, name, area, industry, market, list_date)
-               VALUES (:ts_code, :symbol, :name, :area, :industry, :market, :list_date)""",
+               VALUES (:ts_code, :symbol, :name, :area, :industry,
+                       :market, :list_date)""",
             rows,
         )
     count = len(rows)
@@ -84,7 +84,7 @@ def upsert_stock_basic(rows: list[dict]) -> int:
     return count
 
 
-def search_stock(keyword: str) -> list[dict]:
+def search_stock(keyword: str) -> list[dict[str, object]]:
     conn = _conn()
     cur = conn.execute(
         "SELECT ts_code, symbol, name, industry FROM stock_basic WHERE name = ?",
@@ -103,20 +103,20 @@ def search_stock(keyword: str) -> list[dict]:
 
 def get_ts_code(name: str) -> str | None:
     rows = search_stock(name)
-    return rows[0]["ts_code"] if rows else None
+    return str(rows[0]["ts_code"]) if rows else None
 
 
 def stock_basic_count() -> int:
     conn = _conn()
     count = conn.execute("SELECT COUNT(*) FROM stock_basic").fetchone()[0]
     conn.close()
-    return count
+    return int(count)
 
 
 # -- trade_cal --
 
 
-def upsert_trade_cal(rows: list[dict]) -> int:
+def upsert_trade_cal(rows: list[dict[str, object]]) -> int:
     conn = _conn()
     with conn:
         conn.executemany(
@@ -159,19 +159,21 @@ def trade_cal_count() -> int:
     conn = _conn()
     count = conn.execute("SELECT COUNT(*) FROM trade_cal").fetchone()[0]
     conn.close()
-    return count
+    return int(count)
 
 
 # -- daily_price --
 
 
-def upsert_daily(rows: list[dict], table: str = "daily_price") -> int:
+def upsert_daily(rows: list[dict[str, object]], table: str = "daily_price") -> int:
     conn = _conn()
     with conn:
         conn.executemany(
             f"""INSERT OR REPLACE INTO {table}
-                (ts_code, trade_date, open, high, low, close, pre_close, change, pct_chg, vol, amount)
-                VALUES (:ts_code, :trade_date, :open, :high, :low, :close, :pre_close, :change, :pct_chg, :vol, :amount)""",
+                (ts_code, trade_date, open, high, low, close, pre_close,
+                 change, pct_chg, vol, amount)
+                VALUES (:ts_code, :trade_date, :open, :high, :low, :close,
+                        :pre_close, :change, :pct_chg, :vol, :amount)""",
             rows,
         )
     count = len(rows)
@@ -179,7 +181,9 @@ def upsert_daily(rows: list[dict], table: str = "daily_price") -> int:
     return count
 
 
-def get_daily(ts_code: str, start_date: str, end_date: str, table: str = "daily_price") -> list[dict]:
+def get_daily(
+    ts_code: str, start_date: str, end_date: str, table: str = "daily_price"
+) -> list[dict[str, object]]:
     conn = _conn()
     cur = conn.execute(
         f"""SELECT * FROM {table}
@@ -192,7 +196,9 @@ def get_daily(ts_code: str, start_date: str, end_date: str, table: str = "daily_
     return rows
 
 
-def has_daily(ts_code: str, start_date: str, end_date: str, table: str = "daily_price") -> bool:
+def has_daily(
+    ts_code: str, start_date: str, end_date: str, table: str = "daily_price"
+) -> bool:
     conn = _conn()
     cur = conn.execute(
         f"""SELECT COUNT(*) FROM {table}
@@ -201,4 +207,4 @@ def has_daily(ts_code: str, start_date: str, end_date: str, table: str = "daily_
     )
     count = cur.fetchone()[0]
     conn.close()
-    return count > 0
+    return int(count) > 0

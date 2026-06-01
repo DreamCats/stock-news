@@ -25,7 +25,12 @@ def pipeline(
     # 1. classify
     if not json_output:
         click.echo("[1/3] 消息分类...", err=True)
-    classify(date_str, no_llm, provider_name, json_output=False if not json_output else True)
+    classify(
+        date_str,
+        no_llm,
+        provider_name,
+        json_output=False if not json_output else True,
+    )
     t1 = time.time()
     if not json_output:
         click.echo(f"  ✓ 分类完成 ({t1 - t0:.0f}s)\n", err=True)
@@ -42,6 +47,7 @@ def pipeline(
     if not json_output:
         click.echo("[3/3] 回测...", err=True)
     from stock_news.commands.backtest import run_backtest
+
     run_backtest(date_str, json_output=False if not json_output else True)
     t3 = time.time()
     if not json_output:
@@ -49,4 +55,7 @@ def pipeline(
 
     total = t3 - t0
     if not json_output:
-        click.echo(f"=== Pipeline 完成: 总耗时 {total:.0f}s ({total/60:.1f}min) ===", err=True)
+        click.echo(
+            f"=== Pipeline 完成: 总耗时 {total:.0f}s ({total / 60:.1f}min) ===",
+            err=True,
+        )

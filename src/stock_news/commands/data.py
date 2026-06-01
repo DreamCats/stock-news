@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date
 
 import click
 
@@ -122,7 +122,10 @@ def dedup(date_str: str, dry_run: bool, json_output: bool) -> None:
             else:
                 click.echo(f"{dt} 发现 {len(dups)} 条重复:")
                 for d in dups[:20]:
-                    click.echo(f"  {d['sender']} {d['time']} (首次: {d['first_file']}, 重复: {d['dup_file']})")
+                    click.echo(
+                        f"  {d['sender']} {d['time']} "
+                        f"(首次: {d['first_file']}, 重复: {d['dup_file']})"
+                    )
     else:
         removed = dedup_date(cfg.storage.data_dir, dt)
         if json_output:
