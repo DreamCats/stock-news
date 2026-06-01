@@ -213,12 +213,20 @@ def run_backtest(date_str: str, json_output: bool) -> None:
 
 
 def _result_key_from_rec(rec: Recommendation) -> tuple[str, ...]:
+    return ("rec", rec.message_id, rec.ticker, rec.action)
+
+
+def _legacy_result_key_from_rec(rec: Recommendation) -> tuple[str, ...]:
     rec_date = rec.message_time.strftime("%Y%m%d") if rec.message_time else ""
     return ("legacy", rec.sender, rec.ticker, rec.action, rec_date)
 
 
 def _result_key_from_result(item: dict[str, Any]) -> tuple[str, ...]:
     message_id = item.get("message_id")
+    ticker = item.get("ticker")
+    action = item.get("action")
+    if message_id and ticker and action:
+        return ("rec", str(message_id), str(ticker), str(action))
     if message_id:
         return ("message_id", str(message_id))
     return (
@@ -260,6 +268,24 @@ def _save_backtest_results(
         json.dumps(sender_stats, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _result_with_rec_identity(
+    result: dict[str, Any],
+    rec: Recommendation,
+    ts_code: str,
+    rec_date: str,
+) -> dict[str, Any]:
+    return {
+        **result,
+        "message_id": rec.message_id,
+        "ts_code": ts_code,
+        "ticker": rec.ticker,
+        "sender": rec.sender,
+        "action": rec.action,
+        "strength": rec.strength,
+        "rec_date": rec_date,
+    }
 
 
 def _emit_refresh_progress(
@@ -314,6 +340,7 @@ def _refresh_one_day(
 
     existing = _load_backtest_results(cfg_data_dir, dt)
     by_key = {_result_key_from_result(item): item for item in existing}
+    backtest_cache: dict[tuple[str, str, str, str], dict[str, Any] | None] = {}
     last_progress_at = time.monotonic()
 
     if not json_output and label:
@@ -339,9 +366,14 @@ def _refresh_one_day(
             )
             continue
 
-        key = ("message_id", rec.message_id)
-        legacy_key = _result_key_from_rec(rec)
-        old = by_key.get(key) or by_key.get(legacy_key)
+        key = _result_key_from_rec(rec)
+        legacy_keys = [
+            ("message_id", rec.message_id),
+            _legacy_result_key_from_rec(rec),
+        ]
+        old = by_key.get(key)
+        if old is None:
+            old = next((by_key[k] for k in legacy_keys if k in by_key), None)
         missing = [w for w in mature if not old or f"ret_t{w}" not in old]
         if not missing:
             stats["skipped_complete"] += 1
@@ -379,10 +411,20 @@ def _refresh_one_day(
             if rec.message_time
             else dt.strftime("%Y%m%d")
         )
-        result = _backtest_one(rec, ts_code, rec_date, as_of=as_of)
-        if result:
-            if legacy_key in by_key and key not in by_key:
-                del by_key[legacy_key]
+        cache_key = (ts_code, rec_date, rec.action, as_of.isoformat())
+        if cache_key not in backtest_cache:
+            backtest_cache[cache_key] = _backtest_one(
+                rec,
+                ts_code,
+                rec_date,
+                as_of=as_of,
+            )
+
+        cached_result = backtest_cache[cache_key]
+        if cached_result:
+            result = _result_with_rec_identity(cached_result, rec, ts_code, rec_date)
+            for legacy_key in legacy_keys:
+                by_key.pop(legacy_key, None)
             by_key[key] = result
             stats["refreshed"] += 1
             stats["changed"] = True
@@ -404,7 +446,11 @@ def _refresh_one_day(
             dt,
             sorted(
                 by_key.values(),
-                key=lambda item: str(item.get("message_id", "")),
+                key=lambda item: (
+                    str(item.get("message_id", "")),
+                    str(item.get("ticker", "")),
+                    str(item.get("action", "")),
+                ),
             ),
         )
 

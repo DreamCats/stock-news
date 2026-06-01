@@ -176,6 +176,68 @@ def test_backtest_date_reuses_incremental_refresh_semantics(
     assert calls == []
 
 
+def test_backtest_refresh_keeps_multiple_tickers_from_same_message(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    _write_recs(
+        tmp_path,
+        "2026-05-20",
+        [
+            _rec("multi-1", "2026-05-20", ticker="测试股份A"),
+            _rec("multi-1", "2026-05-20", ticker="测试股份B"),
+        ],
+    )
+
+    monkeypatch.setattr(
+        backtest,
+        "load",
+        lambda: SimpleNamespace(storage=SimpleNamespace(data_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr(backtest, "_mature_windows", lambda rec_dt, as_of: [1])
+    monkeypatch.setattr(
+        backtest,
+        "_resolve_ticker",
+        lambda ticker: {"测试股份A": "000001.SZ", "测试股份B": "000002.SZ"}[ticker],
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_backtest_one(rec, ts_code, rec_date, as_of=None):
+        calls.append((rec.ticker, ts_code))
+        return {
+            "message_id": rec.message_id,
+            "ts_code": ts_code,
+            "sender": rec.sender,
+            "ticker": rec.ticker,
+            "action": rec.action,
+            "strength": rec.strength,
+            "rec_date": rec_date,
+            "ret_t1": 0.01,
+            "win_t1": True,
+        }
+
+    monkeypatch.setattr(backtest, "_backtest_one", fake_backtest_one)
+
+    backtest.run_backtest_refresh("2026-05-25", 6, json_output=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["refreshed"] == 2
+    assert payload["skipped_complete"] == 0
+    assert calls == [("测试股份A", "000001.SZ"), ("测试股份B", "000002.SZ")]
+
+    results = json.loads(
+        (tmp_path / "2026-05-20" / "backtest" / "results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert {(item["message_id"], item["ticker"]) for item in results} == {
+        ("multi-1", "测试股份A"),
+        ("multi-1", "测试股份B"),
+    }
+
+
 def test_backtest_refresh_reports_progress_and_caches_ticker(
     tmp_path,
     monkeypatch,
