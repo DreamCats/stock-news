@@ -108,6 +108,8 @@ class LLMProviderConfig(BaseModel):
     base_url: str
     api_key: str = ""
     model: str
+    api: Literal["openai", "openai-completions", "anthropic-messages"] = "openai"
+    headers: dict[str, str] = Field(default_factory=dict)
     max_tokens: int | None = None
     temperature: float = 0.1
     timeout: float = 300.0
@@ -117,6 +119,7 @@ class LLMConfig(BaseModel):
     default_provider: str = ""
     providers: dict[str, LLMProviderConfig] = {}
     task_routing: dict[str, str] = {}
+    provider_pools: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class StorageConfig(BaseModel):

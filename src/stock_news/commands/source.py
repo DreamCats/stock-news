@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import datetime, timedelta
 
 import click
 
 from stock_news.common.config import load
 from stock_news.source.features import STRONG_TRIGGERS, evidence, snippet
-from stock_news.source.models import SourceCandidate
+from stock_news.source.models import SourceCandidate, SourceScanResult
 from stock_news.source.scanner import parse_date, scan_source_candidates
 
 
@@ -60,14 +60,22 @@ def _candidate_to_dict(candidate: SourceCandidate) -> dict[str, object]:
     }
 
 
-def _format_plain(
-    candidates: tuple[SourceCandidate, ...], start: date, end: date
-) -> None:
+def _window_label(result: SourceScanResult) -> str:
+    if result.window_start is not None and result.window_end is not None:
+        start = result.window_start.strftime("%Y-%m-%d %H:%M:%S")
+        end = result.window_end.strftime("%Y-%m-%d %H:%M:%S")
+        return f"{start} 到 {end}"
+    return f"{result.start} 到 {result.end}"
+
+
+def _format_plain(result: SourceScanResult) -> None:
+    candidates = result.candidates
+    label = _window_label(result)
     if not candidates:
-        click.echo(f"{start} 到 {end} 未发现源头候选")
+        click.echo(f"{label} 未发现源头候选")
         return
 
-    click.echo(f"{start} 到 {end} 源头候选 TOP {len(candidates)}:\n")
+    click.echo(f"{label} 源头候选 TOP {len(candidates)}:\n")
     for index, candidate in enumerate(candidates, start=1):
         first = candidate.first
         first_stock = candidate.first_stock
@@ -109,7 +117,8 @@ def _format_plain(
 
 
 def scan_sources(
-    start_str: str,
+    since_minutes: int | None,
+    start_str: str | None,
     end_str: str,
     lookahead_days: int,
     top: int,
@@ -118,8 +127,22 @@ def scan_sources(
 ) -> None:
     """扫描本地 raw 数据中的源头候选，不调用外部 API，不写文件."""
     cfg = load()
-    start = parse_date(start_str)
-    end = parse_date(end_str)
+    if since_minutes is not None and start_str is not None:
+        raise click.ClickException("--since-minutes 和 --start 不能同时使用")
+    if since_minutes is None and start_str is None:
+        raise click.ClickException("请指定 --since-minutes 或 --start")
+
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    if since_minutes is None:
+        assert start_str is not None
+        start = parse_date(start_str)
+        end = parse_date(end_str)
+    else:
+        window_end = datetime.now().replace(microsecond=0)
+        window_start = window_end - timedelta(minutes=since_minutes)
+        start = window_start.date()
+        end = window_end.date()
     if end < start:
         raise click.ClickException("结束日期不能早于开始日期")
 
@@ -131,6 +154,8 @@ def scan_sources(
             lookahead_days=lookahead_days,
             top=top,
             max_message_chars=max_message_chars,
+            window_start=window_start,
+            window_end=window_end,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -143,6 +168,12 @@ def scan_sources(
                     "data": {
                         "start": result.start.isoformat(),
                         "end": result.end.isoformat(),
+                        "window_start": None
+                        if result.window_start is None
+                        else result.window_start.isoformat(),
+                        "window_end": None
+                        if result.window_end is None
+                        else result.window_end.isoformat(),
                         "lookahead_days": result.lookahead_days,
                         "scanned_messages": result.scanned_messages,
                         "candidate_count": result.candidate_count,
@@ -157,4 +188,4 @@ def scan_sources(
             )
         )
     else:
-        _format_plain(result.candidates, result.start, result.end)
+        _format_plain(result)

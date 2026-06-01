@@ -12,6 +12,8 @@ _DYNAMIC_MARKERS: dict[str, tuple[str, ...]] = {
     "classify_batch": ("以下是待分类的消息：",),
     "extract": ("发送人：{sender}",),
     "extract_batch": ("以下是待抽取的消息：",),
+    "source_extract": ("发送人：{sender}",),
+    "source_extract_batch": ("以下是待抽取的研究消息：",),
     "opinion": ("发送人：{sender}",),
     "opinion_batch": ("发送人：{sender}",),
 }
@@ -58,6 +60,26 @@ BUILTIN_PROMPTS: dict[str, str] = {
 注意：
 - 板块/主题推荐也要抽取，不要因为没有具体个股而返回空数组
 - action 必须归一到允许枚举，不要输出"看好/推荐/强推/首推/加推"
+
+发送人：{sender}
+消息内容：
+{raw_content}""",
+    "source_extract": """\
+你是一个源头雷达抽取器。从研究类投研消息中判断是否存在“源头信号”，返回纯 JSON（不要 markdown 代码块）。
+
+源头信号指可能较早指向新概念、新应用、新政策催化、产业变化的消息。普通周报、会议/调研通知、路演直播、常规研报标题、宽泛行业标签、已很常见的大主题、单纯个股推荐都不是源头信号。
+
+字段：
+- is_source_candidate: true/false
+- source_type: new_concept/new_application/policy_catalyst/industry_change/noise
+- terms: 源头概念或方向，最多 3 个，必须是完整短语，不要残句、泛词或券商/栏目名
+- clean_title: 归一后的简短标题
+- confidence: 0.0 到 1.0
+- reject_reason: 不是源头信号时填写原因，否则填 null
+- evidence: 支撑判断的关键短句
+
+返回格式：
+{{"is_source_candidate": true, "source_type": "new_concept|new_application|policy_catalyst|industry_change|noise", "terms": ["..."], "clean_title": "...", "confidence": 0.0, "reject_reason": null, "evidence": "..."}}
 
 发送人：{sender}
 消息内容：
@@ -164,6 +186,31 @@ BUILTIN_PROMPTS: dict[str, str] = {
 - action 必须归一到允许枚举，不要输出"看好/推荐/强推/首推/加推"
 
 以下是待抽取的消息：
+{messages}""",
+    "source_extract_batch": """\
+你是一个源头雷达抽取器。请对以下多条研究类投研消息逐一判断是否存在“源头信号”，返回纯 JSON 数组（不要 markdown 代码块）。
+
+源头信号指可能较早指向新概念、新应用、新政策催化、产业变化的消息。普通周报、会议/调研通知、路演直播、常规研报标题、宽泛行业标签、已很常见的大主题、单纯个股推荐都不是源头信号。
+
+每个结果必须包含 index 字段（对应输入编号）。
+字段：
+- is_source_candidate: true/false
+- source_type: new_concept/new_application/policy_catalyst/industry_change/noise
+- terms: 源头概念或方向，最多 3 个，必须是完整短语，不要残句、泛词或券商/栏目名
+- clean_title: 归一后的简短标题
+- confidence: 0.0 到 1.0
+- reject_reason: 不是源头信号时填写原因，否则填 null
+- evidence: 支撑判断的关键短句
+
+返回格式：
+[{{"index": 1, "is_source_candidate": true, "source_type": "new_concept|new_application|policy_catalyst|industry_change|noise", "terms": ["..."], "clean_title": "...", "confidence": 0.0, "reject_reason": null, "evidence": "..."}}]
+
+注意：
+- 必须为每条消息都返回结果，不要遗漏
+- index 必须与输入编号严格对应
+- 不确定时宁可 is_source_candidate=false，并说明 reject_reason
+
+以下是待抽取的研究消息：
 {messages}""",
 }
 

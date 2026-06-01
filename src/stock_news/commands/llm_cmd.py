@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 import click
 
@@ -15,13 +16,28 @@ def add_provider(
     base_url: str,
     model: str,
     api_key: str,
+    api_type: Literal["openai", "openai-completions", "anthropic-messages"],
+    raw_headers: tuple[str, ...],
     set_default: bool,
 ) -> None:
+    headers: dict[str, str] = {}
+    for raw in raw_headers:
+        if ":" not in raw:
+            raise click.ClickException("--header 格式必须是 Key:Value")
+        key, value = raw.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise click.ClickException("--header 格式必须是 Key:Value")
+        headers[key] = value
+
     cfg = load()
     cfg.llm.providers[name] = LLMProviderConfig(
         base_url=base_url,
         api_key=api_key,
         model=model,
+        api=api_type,
+        headers=headers,
     )
     if set_default or not cfg.llm.default_provider:
         cfg.llm.default_provider = name
@@ -39,12 +55,15 @@ def list_providers(json_output: bool) -> None:
             "providers": {
                 k: {
                     "base_url": v.base_url,
+                    "api": v.api,
                     "model": v.model,
                     "timeout": v.timeout,
+                    "headers": sorted(v.headers),
                 }
                 for k, v in cfg.llm.providers.items()
             },
             "task_routing": cfg.llm.task_routing,
+            "provider_pools": cfg.llm.provider_pools,
         }
         click.echo(json.dumps({"ok": True, "data": data}, ensure_ascii=False, indent=2))
     else:
@@ -58,12 +77,17 @@ def list_providers(json_output: bool) -> None:
         for name, p in cfg.llm.providers.items():
             marker = " *" if name == cfg.llm.default_provider else ""
             click.echo(
-                f"  {name}{marker}: {p.model} @ {p.base_url} (timeout={p.timeout:g}s)"
+                f"  {name}{marker}: {p.model} [{p.api}] @ {p.base_url} "
+                f"(timeout={p.timeout:g}s)"
             )
         if cfg.llm.task_routing:
             click.echo("\n任务路由:")
             for task, provider in cfg.llm.task_routing.items():
                 click.echo(f"  {task}: {provider}")
+        if cfg.llm.provider_pools:
+            click.echo("\nProvider 池:")
+            for task, providers in cfg.llm.provider_pools.items():
+                click.echo(f"  {task}: {', '.join(providers)}")
 
 
 def set_default(name: str) -> None:

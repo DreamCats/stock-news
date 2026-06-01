@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import click
 
 
@@ -14,9 +16,23 @@ def llm(ctx: click.Context) -> None:
 
 @llm.command("add")
 @click.argument("name")
-@click.option("--base-url", required=True, help="OpenAI 兼容接口地址")
+@click.option("--base-url", required=True, help="LLM 接口地址")
 @click.option("--model", required=True, help="模型名")
 @click.option("--api-key", default="", help="API key")
+@click.option(
+    "--api",
+    "api_type",
+    type=click.Choice(["openai", "openai-completions", "anthropic-messages"]),
+    default="openai",
+    show_default=True,
+    help="接口协议",
+)
+@click.option(
+    "--header",
+    "headers",
+    multiple=True,
+    help="附加请求头，格式 Key:Value，可重复",
+)
 @click.option("--default", "set_default", is_flag=True, help="设为默认")
 @click.pass_context
 def llm_add(
@@ -25,12 +41,14 @@ def llm_add(
     base_url: str,
     model: str,
     api_key: str,
+    api_type: Literal["openai", "openai-completions", "anthropic-messages"],
+    headers: tuple[str, ...],
     set_default: bool,
 ) -> None:
     """添加 LLM provider."""
     from stock_news.commands.llm_cmd import add_provider
 
-    add_provider(name, base_url, model, api_key, set_default)
+    add_provider(name, base_url, model, api_key, api_type, headers, set_default)
 
 
 @llm.command("list")

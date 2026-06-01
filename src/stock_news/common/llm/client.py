@@ -1,4 +1,4 @@
-"""OpenAI 兼容 LLM 客户端."""
+"""LLM 客户端入口：provider 解析、限速、重试和 JSON 包装."""
 
 from __future__ import annotations
 
@@ -6,12 +6,16 @@ import json
 import sys
 import threading
 import time
-from typing import Any, cast
+from collections.abc import Callable
+from typing import cast
 
-from openai import OpenAI, RateLimitError
+import httpx
+from openai import RateLimitError
 
 from stock_news.common.config import load
 from stock_news.common.exceptions import ConfigError
+from stock_news.common.llm.anthropic_client import chat_anthropic
+from stock_news.common.llm.openai_client import chat_openai
 from stock_news.models import LLMProviderConfig
 
 _MAX_RETRIES = 5
@@ -61,12 +65,23 @@ def _resolve_provider(
     return name, cfg.llm.providers[name]
 
 
-def _build_client(provider: LLMProviderConfig) -> OpenAI:
-    return OpenAI(
-        base_url=provider.base_url,
-        api_key=provider.api_key or "no-key",
-        timeout=provider.timeout,
-    )
+ChatFn = Callable[
+    [
+        LLMProviderConfig,
+        list[dict[str, str]],
+        str | None,
+        float | None,
+        int | None,
+        bool,
+    ],
+    str,
+]
+
+
+def _chat_impl(provider: LLMProviderConfig) -> ChatFn:
+    if provider.api == "anthropic-messages":
+        return chat_anthropic
+    return chat_openai
 
 
 def get_provider_for_task(task: str) -> tuple[str, LLMProviderConfig]:
@@ -86,25 +101,25 @@ def chat(
 ) -> str:
     """发送聊天请求，返回文本."""
     name, provider = _resolve_provider(provider_name)
-    client = _build_client(provider)
-    kwargs: dict[str, Any] = {
-        "model": model or provider.model,
-        "messages": messages,
-        "temperature": temperature if temperature is not None else provider.temperature,
-    }
-    effective_max = max_tokens or provider.max_tokens
-    if effective_max:
-        kwargs["max_tokens"] = effective_max
-    if disable_thinking:
-        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    impl = _chat_impl(provider)
 
     for attempt in range(_MAX_RETRIES + 1):
         _rpm_wait()
         try:
-            resp = client.chat.completions.create(**kwargs)
-            content = resp.choices[0].message.content
-            return content or ""
-        except RateLimitError:
+            return impl(
+                provider,
+                messages,
+                model,
+                temperature,
+                max_tokens,
+                disable_thinking,
+            )
+        except (RateLimitError, httpx.HTTPStatusError) as exc:
+            if (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code != 429
+            ):
+                raise
             if attempt == _MAX_RETRIES:
                 raise
             delay = _BASE_DELAY * (2**attempt)

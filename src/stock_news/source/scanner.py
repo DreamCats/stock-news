@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from stock_news.common.storage import load_messages
-from stock_news.models import ClassifiedMessage, Recommendation
+from stock_news.models import ClassifiedMessage, RawMessage, Recommendation
 from stock_news.source.features import (
     extract_terms,
     find_triggers,
@@ -23,8 +23,10 @@ from stock_news.source.models import (
     Mention,
     MessageRow,
     SourceCandidate,
+    SourceExtractItem,
     SourceScanResult,
 )
+from stock_news.source.storage import load_source_extracts
 
 
 def parse_date(date_str: str) -> date:
@@ -121,6 +123,59 @@ def build_rows(
     return rows
 
 
+def _source_triggers(item: SourceExtractItem) -> tuple[str, ...]:
+    return {
+        "new_concept": ("新概念",),
+        "new_application": ("新应用",),
+        "policy_catalyst": ("催化",),
+        "industry_change": ("新方向",),
+        "noise": (),
+    }.get(item.source_type, ())
+
+
+def build_source_extract_rows(
+    data_dir: str,
+    dates: list[date],
+    recommendations: dict[str, tuple[Recommendation, ...]],
+) -> tuple[list[MessageRow], bool]:
+    rows: list[MessageRow] = []
+    found_files = False
+    root = Path(data_dir).expanduser()
+    raw_by_id = {
+        message.message_id: message
+        for dt in dates
+        for message in load_messages(data_dir, dt)
+    }
+    for dt in dates:
+        path = root / dt.isoformat() / "source_extract" / "candidates.json"
+        if not path.exists():
+            continue
+        found_files = True
+        for item in load_source_extracts(data_dir, dt):
+            if not item.is_source_candidate:
+                continue
+            message = raw_by_id.get(item.message_id) or RawMessage(
+                source=item.source,
+                sender=item.sender,
+                message_time=item.message_time,
+                raw_content=item.clean_title or item.evidence or "源头候选",
+                group_name=item.group_name,
+                fetch_time=item.message_time,
+                fetch_window="source_extract",
+            )
+            rows.append(
+                MessageRow(
+                    date=item.message_time.date(),
+                    message=message,
+                    category="research",
+                    recommendations=recommendations.get(item.message_id, ()),
+                    terms=tuple(item.terms),
+                    triggers=_source_triggers(item),
+                )
+            )
+    return rows, found_files
+
+
 def scan_source_candidates(
     data_dir: str,
     start: date,
@@ -128,15 +183,22 @@ def scan_source_candidates(
     lookahead_days: int,
     top: int,
     max_message_chars: int,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
 ) -> SourceScanResult:
     observe_end = end + timedelta(days=lookahead_days)
     dates = available_dates(data_dir, observe_end)
     if not dates:
         raise ValueError("未找到本地数据目录")
 
-    classified = load_classified_map(data_dir, dates)
     recommendations = load_recommendation_map(data_dir, dates)
-    rows = build_rows(data_dir, dates, classified, recommendations)
+    rows, found_source_extract = build_source_extract_rows(
+        data_dir,
+        dates,
+        recommendations,
+    )
+    if not found_source_extract:
+        raise ValueError("未找到 source_extract 产物，请先运行 sn source extract")
 
     mentions_by_term: dict[str, list[Mention]] = defaultdict(list)
     for row in rows:
@@ -147,6 +209,10 @@ def scan_source_candidates(
     candidate_by_term: dict[str, SourceCandidate] = {}
     for row in rows:
         if not is_source_like(row, start, end, max_message_chars):
+            continue
+        if window_start is not None and row.message.message_time < window_start:
+            continue
+        if window_end is not None and row.message.message_time > window_end:
             continue
         for term in row.terms:
             mentions = sorted(
@@ -213,6 +279,8 @@ def scan_source_candidates(
     return SourceScanResult(
         start=start,
         end=end,
+        window_start=window_start,
+        window_end=window_end,
         lookahead_days=lookahead_days,
         scanned_messages=len(rows),
         candidate_count=len(candidate_by_term),
