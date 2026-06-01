@@ -19,6 +19,16 @@ def candidates_path(cfg_data_dir: str, dt: date) -> Path:
     return source_extract_dir(cfg_data_dir, dt) / "candidates.json"
 
 
+def source_scan_dir(cfg_data_dir: str, dt: date) -> Path:
+    d = Path(cfg_data_dir).expanduser() / dt.isoformat() / "source_scan"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def radar_markdown_path(cfg_data_dir: str, dt: date) -> Path:
+    return source_scan_dir(cfg_data_dir, dt) / "radar.md"
+
+
 def processed_ids_path(cfg_data_dir: str, dt: date) -> Path:
     return source_extract_dir(cfg_data_dir, dt) / "processed_ids.json"
 

@@ -65,6 +65,18 @@ class SourceCandidate:
     first: Mention
     first_stock: Mention | None
     stock_names: tuple[str, ...]
+    baseline_daily: float = 0.0
+    surge_count: int = 0
+    surge_groups: int = 0
+    surge_ratio: float = 0.0
+    # 同源别名：同一条首现消息切出的其它候选词（折叠后挂在主词下）。
+    aliases: tuple[str, ...] = ()
+    # T+3 事后回看验证：首现后 horizon 天内的真实扩散与个股落地。
+    t3_groups: int = 0
+    t3_senders: int = 0
+    t3_stocks: tuple[str, ...] = ()
+    verified: bool = False
+    verdict: str = ""
 
 
 @dataclass(frozen=True)

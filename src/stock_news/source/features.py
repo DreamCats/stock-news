@@ -228,43 +228,59 @@ def score_candidate(
     previous_count: int,
     later_mentions: list[Mention],
     stock_mentions: list[Mention],
+    baseline_daily: float = 0.0,
+    surge_count: int = 0,
+    surge_groups: int = 0,
+    surge_ratio: float = 0.0,
 ) -> float:
-    row = first.row
-    score = 8.0
-    score += 5.0 if len(row.message.raw_content) <= 120 else 2.0
-    score += 6.0 if any(trigger in STRONG_TRIGGERS for trigger in row.triggers) else 2.0
-    if row.category in {MessageCategory.RESEARCH.value, MessageCategory.EVENT.value}:
-        score += 4.0
-    if previous_count == 0:
-        score += 10.0
-    elif previous_count <= 2:
-        score += 5.0
-    else:
-        score -= min(previous_count, 12) * 0.8
+    """以“低频拐点”为核心的打分。
 
+    主权重是放量倍率 surge_ratio（当日量相对历史基线的突变），
+    基线越低、当日跨群越多、后续越扩散，分越高；
+    高频旧主题（基线高）扣分降权但不剔除。
+    """
+    row = first.row
+    score = 6.0
+    score += 4.0 if len(row.message.raw_content) <= 120 else 1.0
+    score += 4.0 if any(trigger in STRONG_TRIGGERS for trigger in row.triggers) else 1.0
+    if row.category in {MessageCategory.RESEARCH.value, MessageCategory.EVENT.value}:
+        score += 3.0
+
+    # 拐点主权重：放量倍率
+    score += min(surge_ratio, 20.0) * 1.5
+    # 当日跨群放量：真扩散而非单点刷屏
+    score += min(surge_groups, 8) * 1.5
+
+    # 基线分层：低频起量最香，高频旧主题降权
+    if baseline_daily <= 2.0:
+        score += 8.0
+    elif baseline_daily <= 10.0:
+        score += 3.0
+    else:
+        score -= min(baseline_daily, 40.0) * 0.4
+
+    # 后续扩散（lookahead 内）佐证
     later_groups = {
         m.row.message.group_name for m in later_mentions if m.row.message.group_name
     }
-    later_senders = {m.row.message.sender for m in later_mentions}
     later_dates = {m.row.date for m in later_mentions}
-    score += min(len(later_mentions), 12) * 0.6
-    score += min(len(later_groups), 5) * 1.2
-    score += min(len(later_senders), 5) * 1.0
-    score += min(len(later_dates), 5) * 1.2
+    score += min(len(later_mentions), 12) * 0.4
+    score += min(len(later_groups), 5) * 1.0
+    score += min(len(later_dates), 5) * 1.0
 
     if stock_mentions:
-        score += 6.0
+        score += 5.0
         score += min(sum(len(m.stocks) for m in stock_mentions), 10) * 0.5
     return round(score, 1)
 
 
-def novelty_level(previous_count: int) -> str:
+def novelty_level(previous_count: int, baseline_daily: float = 0.0) -> str:
     if previous_count == 0:
         return "全新"
-    if previous_count <= 2:
+    if baseline_daily <= 2.0:
         return "低频"
-    if previous_count <= 20:
-        return "已有"
+    if baseline_daily <= 10.0:
+        return "中频"
     return "高频旧主题"
 
 
@@ -272,25 +288,34 @@ def signal_type(
     previous_count: int,
     later_mentions: list[Mention],
     stock_mentions: list[Mention],
+    baseline_daily: float = 0.0,
+    surge_ratio: float = 0.0,
+    surge_groups: int = 0,
 ) -> str:
+    """信号分层，以低频拐点为最高优先级。"""
+    # 低频拐点：历史基线低 + 当日明显放量 + 跨群扩散
+    if baseline_daily <= 2.0 and surge_ratio >= 3.0 and surge_groups >= 3:
+        return "低频拐点"
+    # 放量加速：中频但显著起量（二次催化）
+    if 2.0 < baseline_daily <= 10.0 and surge_ratio >= 2.0 and surge_groups >= 3:
+        return "放量加速"
     if previous_count == 0:
-        return "新词源头"
-    if previous_count <= 2:
-        return "低频新线索"
+        return "全新首现"
+    if baseline_daily > 10.0:
+        return "高频旧主题"
     if stock_mentions and len(later_mentions) >= 3:
         return "扩散带股"
-    if previous_count > 20 and len(later_mentions) >= 5:
-        return "旧主题再催化"
     return "普通线索"
 
 
 def signal_priority(signal: str) -> int:
     priorities = {
-        "新词源头": 0,
-        "低频新线索": 1,
+        "低频拐点": 0,
+        "放量加速": 1,
         "扩散带股": 2,
-        "旧主题再催化": 3,
+        "全新首现": 3,
         "普通线索": 4,
+        "高频旧主题": 5,
     }
     return priorities.get(signal, 9)
 
@@ -299,10 +324,17 @@ def evidence(candidate: SourceCandidate) -> list[str]:
     out: list[str] = []
     if candidate.previous_mentions == 0:
         out.append("本地历史首次出现")
-    elif candidate.previous_mentions <= 2:
-        out.append(f"历史低频，仅 {candidate.previous_mentions} 次")
     else:
-        out.append(f"历史已有 {candidate.previous_mentions} 次")
+        out.append(
+            f"历史基线 {candidate.baseline_daily}/天"
+            f"（共 {candidate.previous_mentions} 次）"
+        )
+    if candidate.surge_count:
+        ratio = candidate.surge_ratio
+        out.append(
+            f"当日放量 {candidate.surge_count} 次/{candidate.surge_groups} 群"
+            + (f"，放量倍率 {ratio}×" if ratio else "")
+        )
     if candidate.later_mentions:
         out.append(
             "后续扩散 "
@@ -311,4 +343,29 @@ def evidence(candidate: SourceCandidate) -> list[str]:
         )
     if candidate.first_stock is not None:
         out.append("后续出现带股消息")
+    if candidate.verdict:
+        mark = "✓" if candidate.verified else "✗"
+        out.append(f"T+3 回看 {mark} {candidate.verdict}")
     return out
+
+
+def t3_verdict(
+    t3_groups: int,
+    t3_senders: int,
+    t3_stocks: tuple[str, ...],
+) -> tuple[bool, str]:
+    """T+3 事后回看裁决：首现后 horizon 天内是否真扩散、是否落到个股。
+
+    口径（站在老板视角）：要别人自发接力才算真起势——
+    单人在多个群刷屏不算，必须有≥2 个独立发布人接棒；
+    链路终点是个股埋伏，所以“落到个股”是最硬的命中。
+
+    返回 (是否验证为真信号, 一句话裁决)。
+    """
+    if t3_stocks:
+        return True, f"已落地个股（{len(t3_stocks)} 只）"
+    if t3_senders >= 2 and t3_groups >= 3:
+        return True, f"已验证扩散（{t3_senders} 人/{t3_groups} 群接力）"
+    if t3_senders >= 1:
+        return False, f"弱扩散（仅 {t3_senders} 人/{t3_groups} 群）"
+    return False, "单点哑火（无人接力）"

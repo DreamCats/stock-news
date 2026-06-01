@@ -69,6 +69,13 @@ def extract(
     help="向后观察扩散和首次带股的天数",
 )
 @click.option(
+    "--lookback-days",
+    type=click.IntRange(min=0),
+    default=30,
+    show_default=True,
+    help="向前回看多少天的全量语料，用于判定“全新/历史提及”",
+)
+@click.option(
     "--top",
     "-n",
     type=click.IntRange(min=1),
@@ -82,6 +89,17 @@ def extract(
     show_default=True,
     help="源头候选消息最大长度",
 )
+@click.option(
+    "--markdown",
+    "write_markdown",
+    is_flag=True,
+    help="把榜单渲染成 Markdown 落盘到 data/<end>/source_scan/radar.md",
+)
+@click.option(
+    "--markdown-out",
+    "markdown_out",
+    help="自定义 Markdown 输出路径（指定即落盘，覆盖默认路径）",
+)
 @click.pass_context
 def scan(
     ctx: click.Context,
@@ -89,8 +107,11 @@ def scan(
     start_str: str | None,
     end_str: str,
     lookahead_days: int,
+    lookback_days: int,
     top: int,
     max_message_chars: int,
+    write_markdown: bool,
+    markdown_out: str | None,
 ) -> None:
     """扫描源头候选."""
     from stock_news.commands.source import scan_sources
@@ -100,7 +121,10 @@ def scan(
         start_str=start_str,
         end_str=end_str,
         lookahead_days=lookahead_days,
+        lookback_days=lookback_days,
         top=top,
         max_message_chars=max_message_chars,
         json_output=ctx.obj["json_output"],
+        write_markdown=write_markdown,
+        markdown_out=markdown_out,
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import click
 
@@ -11,6 +12,7 @@ from stock_news.common.config import load
 from stock_news.source.features import STRONG_TRIGGERS, evidence, snippet
 from stock_news.source.models import SourceCandidate, SourceScanResult
 from stock_news.source.scanner import parse_date, scan_source_candidates
+from stock_news.source.storage import radar_markdown_path
 
 
 def _candidate_to_dict(candidate: SourceCandidate) -> dict[str, object]:
@@ -22,6 +24,16 @@ def _candidate_to_dict(candidate: SourceCandidate) -> dict[str, object]:
         "signal_type": candidate.signal_type,
         "novelty_level": candidate.novelty_level,
         "previous_mentions": candidate.previous_mentions,
+        "baseline_daily": candidate.baseline_daily,
+        "surge_count": candidate.surge_count,
+        "surge_groups": candidate.surge_groups,
+        "surge_ratio": candidate.surge_ratio,
+        "aliases": list(candidate.aliases),
+        "t3_groups": candidate.t3_groups,
+        "t3_senders": candidate.t3_senders,
+        "t3_stocks": list(candidate.t3_stocks),
+        "verified": candidate.verified,
+        "verdict": candidate.verdict,
         "later_mentions": candidate.later_mentions,
         "later_days": candidate.later_days,
         "later_groups": candidate.later_groups,
@@ -79,16 +91,31 @@ def _format_plain(result: SourceScanResult) -> None:
     for index, candidate in enumerate(candidates, start=1):
         first = candidate.first
         first_stock = candidate.first_stock
+        mark = "✓真" if candidate.verified else ""
         click.echo(
             f"{index}. {candidate.term}  score={candidate.score}  "
             f"信号={candidate.signal_type}  新鲜度={candidate.novelty_level}"
+            + (f"  {mark}" if mark else "")
         )
+        if candidate.aliases:
+            click.echo("   同源词: " + "、".join(candidate.aliases))
         click.echo(
             "   计数: "
-            f"历史提及={candidate.previous_mentions}，"
-            f"后续扩散={candidate.later_mentions}，"
-            f"覆盖={candidate.later_days}天/"
-            f"{candidate.later_groups}群/{candidate.later_senders}人"
+            f"历史基线={candidate.baseline_daily}/天，"
+            f"当日放量={candidate.surge_count}次/{candidate.surge_groups}群"
+            f"（{candidate.surge_ratio}×），"
+            f"后续扩散={candidate.later_mentions}次/"
+            f"{candidate.later_days}天/{candidate.later_groups}群"
+        )
+        t3_stocks = (
+            "，落地个股=" + "、".join(candidate.t3_stocks[:6])
+            if candidate.t3_stocks
+            else ""
+        )
+        click.echo(
+            "   T+3: "
+            f"接力={candidate.t3_senders}人/{candidate.t3_groups}群"
+            f"{t3_stocks} → {candidate.verdict}"
         )
         click.echo(
             "   首次: "
@@ -116,6 +143,80 @@ def _format_plain(result: SourceScanResult) -> None:
         click.echo()
 
 
+def _render_markdown(result: SourceScanResult) -> str:
+    """把扫描榜单渲染成一篇 Markdown 文档（可直接 delivery --markdown-file 推送）。"""
+    label = _window_label(result)
+    lines: list[str] = [
+        f"# 源头雷达 · {label}",
+        "",
+        f"- 扫描消息数：{result.scanned_messages}",
+        f"- 源头候选数：{result.candidate_count}",
+        f"- 观察窗口：T+{result.lookahead_days} 天",
+        "",
+    ]
+
+    candidates = result.candidates
+    if not candidates:
+        lines.append("> 本窗口未发现源头候选。")
+        return "\n".join(lines) + "\n"
+
+    lines += [
+        f"## TOP {len(candidates)} 榜单",
+        "",
+        "| # | 词 | 信号 | 倍率 | 基线/天 | 当日放量 | T+3接力 | 落地个股 | 裁决 |",
+        "|--:|----|------|-----:|-----:|------|------|------|------|",
+    ]
+    for index, candidate in enumerate(candidates, start=1):
+        mark = " ✓真" if candidate.verified else ""
+        stocks = "、".join(candidate.t3_stocks[:4]) if candidate.t3_stocks else "—"
+        lines.append(
+            f"| {index} | {candidate.term}{mark} | {candidate.signal_type} | "
+            f"{candidate.surge_ratio}× | {candidate.baseline_daily} | "
+            f"{candidate.surge_count}次/{candidate.surge_groups}群 | "
+            f"{candidate.t3_senders}人/{candidate.t3_groups}群 | "
+            f"{stocks} | {candidate.verdict or '—'} |"
+        )
+    lines.append("")
+
+    lines += ["## 候选明细", ""]
+    for index, candidate in enumerate(candidates, start=1):
+        first = candidate.first
+        mark = " ✓真" if candidate.verified else ""
+        lines.append(
+            f"### {index}. {candidate.term}{mark}"
+            f"（{candidate.signal_type} / 新鲜度 {candidate.novelty_level}）"
+        )
+        if candidate.aliases:
+            lines.append(f"- 同源词：{'、'.join(candidate.aliases)}")
+        lines.append(
+            f"- 计数：历史基线 {candidate.baseline_daily}/天，"
+            f"当日放量 {candidate.surge_count}次/{candidate.surge_groups}群"
+            f"（{candidate.surge_ratio}×），"
+            f"后续扩散 {candidate.later_mentions}次/{candidate.later_days}天/"
+            f"{candidate.later_groups}群"
+        )
+        t3_stocks = (
+            "，落地个股 " + "、".join(candidate.t3_stocks[:6])
+            if candidate.t3_stocks
+            else ""
+        )
+        lines.append(
+            f"- T+3：接力 {candidate.t3_senders}人/{candidate.t3_groups}群"
+            f"{t3_stocks} → {candidate.verdict or '—'}"
+        )
+        lines.append(
+            f"- 首现：{first.row.message.message_time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"{first.row.message.group_name or '-'} / {first.row.message.sender}"
+        )
+        candidate_evidence = "；".join(evidence(candidate))
+        if candidate_evidence:
+            lines.append(f"- 依据：{candidate_evidence}")
+        lines.append(f"- 摘要：{snippet(first.row.message.raw_content)}")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def scan_sources(
     since_minutes: int | None,
     start_str: str | None,
@@ -124,8 +225,15 @@ def scan_sources(
     top: int,
     max_message_chars: int,
     json_output: bool,
+    lookback_days: int = 30,
+    write_markdown: bool = False,
+    markdown_out: str | None = None,
 ) -> None:
-    """扫描本地 raw 数据中的源头候选，不调用外部 API，不写文件."""
+    """扫描本地 raw 数据中的源头候选，不调用外部 API.
+
+    write_markdown / markdown_out 为真时，把榜单额外渲染成 Markdown 落盘
+    （默认 data/<end>/source_scan/radar.md），供 sn delivery send --markdown-file 推送。
+    """
     cfg = load()
     if since_minutes is not None and start_str is not None:
         raise click.ClickException("--since-minutes 和 --start 不能同时使用")
@@ -154,11 +262,21 @@ def scan_sources(
             lookahead_days=lookahead_days,
             top=top,
             max_message_chars=max_message_chars,
+            lookback_days=lookback_days,
             window_start=window_start,
             window_end=window_end,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+    md_path: Path | None = None
+    if write_markdown or markdown_out:
+        if markdown_out:
+            md_path = Path(markdown_out).expanduser()
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            md_path = radar_markdown_path(cfg.storage.data_dir, end)
+        md_path.write_text(_render_markdown(result), encoding="utf-8")
 
     if json_output:
         click.echo(
@@ -177,6 +295,7 @@ def scan_sources(
                         "lookahead_days": result.lookahead_days,
                         "scanned_messages": result.scanned_messages,
                         "candidate_count": result.candidate_count,
+                        "markdown_path": None if md_path is None else str(md_path),
                         "candidates": [
                             _candidate_to_dict(item) for item in result.candidates
                         ],
@@ -189,3 +308,5 @@ def scan_sources(
         )
     else:
         _format_plain(result)
+        if md_path is not None:
+            click.echo(f"Markdown 已保存: {md_path}")
