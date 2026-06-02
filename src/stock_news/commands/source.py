@@ -113,7 +113,7 @@ def _format_plain(result: SourceScanResult) -> None:
             else ""
         )
         click.echo(
-            "   T+3: "
+            f"   T+{result.lookahead_days}: "
             f"接力={candidate.t3_senders}人/{candidate.t3_groups}群"
             f"{t3_stocks} → {candidate.verdict}"
         )
@@ -163,7 +163,8 @@ def _render_markdown(result: SourceScanResult) -> str:
     lines += [
         f"## TOP {len(candidates)} 榜单",
         "",
-        "| # | 词 | 信号 | 倍率 | 基线/天 | 当日放量 | T+3接力 | 落地个股 | 裁决 |",
+        f"| # | 词 | 信号 | 倍率 | 基线/天 | 当日放量 | "
+        f"T+{result.lookahead_days}接力 | 落地个股 | 裁决 |",
         "|--:|----|------|-----:|-----:|------|------|------|------|",
     ]
     for index, candidate in enumerate(candidates, start=1):
@@ -201,7 +202,8 @@ def _render_markdown(result: SourceScanResult) -> str:
             else ""
         )
         lines.append(
-            f"- T+3：接力 {candidate.t3_senders}人/{candidate.t3_groups}群"
+            f"- T+{result.lookahead_days}：接力 "
+            f"{candidate.t3_senders}人/{candidate.t3_groups}群"
             f"{t3_stocks} → {candidate.verdict or '—'}"
         )
         lines.append(
