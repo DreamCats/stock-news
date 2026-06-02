@@ -29,7 +29,7 @@ from stock_news.models import (
     DeliveryTargetConfig,
 )
 
-MessageFormat = Literal["text", "post", "markdown"]
+MessageFormat = Literal["text", "post", "markdown", "markdown_v2"]
 
 
 def _json_output(ctx: click.Context) -> bool:
@@ -293,7 +293,7 @@ def route_group() -> None:
 @click.option(
     "--format",
     "message_format",
-    type=click.Choice(["text", "post", "markdown"]),
+    type=click.Choice(["text", "post", "markdown", "markdown_v2"]),
     default="post",
 )
 @click.option("--fail-fast", is_flag=True, help="任一 target 失败后停止后续发送")
@@ -359,7 +359,7 @@ def route_list(ctx: click.Context) -> None:
 @click.option(
     "--format",
     "message_format",
-    type=click.Choice(["text", "post", "markdown"]),
+    type=click.Choice(["text", "post", "markdown", "markdown_v2"]),
 )
 @click.option("--idempotency-key", help="飞书消息幂等 key")
 @click.pass_context
@@ -411,9 +411,12 @@ def send_cmd(
         assert route_name is not None
         route, targets = route_targets(route_name)
         fail_fast = route.fail_fast
-        fmt = message_format or (
-            "markdown" if default_format == "markdown" else route.format
-        )
+        if message_format:
+            fmt = message_format
+        elif default_format == "markdown":
+            fmt = route.format if route.format == "markdown_v2" else "markdown"
+        else:
+            fmt = route.format
 
     if file_path is not None:
         results = send_file_targets(

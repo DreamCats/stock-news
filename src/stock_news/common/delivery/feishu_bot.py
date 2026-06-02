@@ -26,7 +26,7 @@ _token_cache: dict[tuple[str, str], _TokenCache] = {}
 
 @dataclass(frozen=True)
 class DeliveryMessage:
-    format: Literal["text", "post", "markdown"]
+    format: Literal["text", "post", "markdown", "markdown_v2"]
     text: str
     title: str | None = None
 
@@ -114,7 +114,7 @@ def _content(message: DeliveryMessage) -> tuple[str, str]:
         return "text", json.dumps({"text": message.text}, ensure_ascii=False)
 
     title = message.title or "stock-news"
-    if message.format == "markdown":
+    if message.format in ("markdown", "markdown_v2"):
         return "post", json.dumps(
             {
                 "zh_cn": {

@@ -10,7 +10,9 @@ from stock_news.cli import main
 from stock_news.commands import delivery as delivery_cmd
 from stock_news.common import config as config_mod
 from stock_news.common.delivery import service as delivery_service
+from stock_news.common.delivery import wecom_bot
 from stock_news.common.delivery.feishu_bot import DeliveryMessage, DeliveryResult
+from stock_news.models import DeliveryProviderConfig, DeliveryTargetConfig
 
 
 def _isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -312,6 +314,130 @@ def test_delivery_route_can_send_to_wecom(
     assert payload["data"]["sent"] == 1
     assert sent[0][0] == "wecom-g1"
     assert sent[0][1].format == "markdown"
+
+
+def test_delivery_route_can_send_wecom_markdown_v2(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    sent: list[DeliveryMessage] = []
+    markdown_file = tmp_path / "radar.md"
+    markdown_file.write_text("| A | B |\n|---|---|\n| 1 | 2 |\n", encoding="utf-8")
+
+    def fake_send_wecom(
+        _provider: object,
+        _target_name: str,
+        _target: object,
+        message: DeliveryMessage,
+    ) -> DeliveryResult:
+        sent.append(message)
+        return DeliveryResult(
+            target="wecom-g2",
+            recipient_type="webhook",
+            recipient_id="wecom-g2",
+            ok=True,
+        )
+
+    monkeypatch.setattr(delivery_service, "send_wecom_message", fake_send_wecom)
+    runner = CliRunner()
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-wecom",
+            "wecom-g2",
+            "--webhook-url",
+            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-key",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-webhook",
+            "wecom-g2",
+            "--provider",
+            "wecom-g2",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "route",
+            "add",
+            "radar",
+            "--target",
+            "wecom-g2",
+            "--format",
+            "markdown_v2",
+        ],
+    )
+
+    result = runner.invoke(
+        main,
+        [
+            "--json",
+            "delivery",
+            "send",
+            "--route",
+            "radar",
+            "--markdown-file",
+            str(markdown_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["data"]["sent"] == 1
+    assert sent[0].format == "markdown_v2"
+    assert wecom_bot._payload(sent[0]) == {
+        "msgtype": "markdown_v2",
+        "markdown_v2": {"content": markdown_file.read_text(encoding="utf-8")},
+    }
+
+
+def test_wecom_markdown_v2_splits_long_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posts: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"errcode": 0}
+
+    def fake_post(
+        _url: str,
+        *,
+        json: dict[str, object],
+        timeout: int,
+    ) -> FakeResponse:
+        assert timeout == 30
+        posts.append(json)
+        return FakeResponse()
+
+    monkeypatch.setattr(wecom_bot.httpx, "post", fake_post)
+    provider = DeliveryProviderConfig(
+        type="wecom_bot",
+        webhook_url="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-key",
+    )
+    target = DeliveryTargetConfig(provider="wecom-g2", kind="webhook")
+    message = DeliveryMessage(format="markdown_v2", text=("源头雷达\n" * 700))
+
+    result = wecom_bot.send_message(provider, "wecom-g2", target, message)
+
+    assert result.ok
+    assert len(posts) > 1
+    for post in posts:
+        assert post["msgtype"] == "markdown_v2"
+        body = post["markdown_v2"]
+        assert isinstance(body, dict)
+        assert len(str(body["content"]).encode("utf-8")) <= 4096
 
 
 def test_delivery_send_markdown(

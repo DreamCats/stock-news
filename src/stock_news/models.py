@@ -176,7 +176,7 @@ class DeliveryTargetConfig(BaseModel):
 
 class DeliveryRouteConfig(BaseModel):
     targets: list[str] = Field(default_factory=list)
-    format: Literal["text", "post", "markdown"] = "post"
+    format: Literal["text", "post", "markdown", "markdown_v2"] = "post"
     fail_fast: bool = False
 
 
