@@ -263,16 +263,16 @@ LLM 的主要职责不是判断热度，而是识别“熟悉锚点 + 陌生表�
 | research 分类 | 35,599 |
 | event 分类 | 17,529 |
 | recommendation 分类 | 19,280 |
-| source_extract 结果 | 2,462 |
-| source_extract 候选 | 784 |
+| 旧源头抽词结果 | 2,462 |
+| 旧源头抽词候选 | 784 |
 
-关键限制：`source_extract` 目前只覆盖 2026-05-11、2026-05-30、2026-05-31 三天。4 月和 5 月大部分日期虽然有 raw / classified / research，但没有源头抽取产物。
+关键限制：旧源头抽词只覆盖 2026-05-11、2026-05-30、2026-05-31 三天。4 月和 5 月大部分日期虽然有 raw / classified / research，但没有连续结构产物。
 
-结论：不能只用已有 `source_extract` 来验证“首现”。否则很多词会被误判成“第一次被系统看到”，而不是真正在本地语料里第一次出现。
+结论：不能只用少数几天的抽取产物来验证“首现”。否则很多词会被误判成“第一次被系统看到”，而不是真正在本地语料里第一次出现。
 
-进一步把已有 `source_extract` 的 1,413 个唯一候选词，回到 4-5 月个人群 raw 里做原文子串首现匹配：
+进一步把旧抽词样本中的 1,413 个唯一候选词，回到 4-5 月个人群 raw 里做原文子串首现匹配：
 
-| 首现相对 source_extract | 词数 |
+| 首现相对抽取日 | 词数 |
 |-------------------------|----:|
 | 同一天出现 | 224 |
 | 提前 1-3 天出现 | 45 |
@@ -281,11 +281,11 @@ LLM 的主要职责不是判断热度，而是识别“熟悉锚点 + 陌生表�
 | 提前 14 天以上出现 | 309 |
 | raw 中无法按原词子串匹配 | 773 |
 
-在能用原文子串匹配验证的 640 个词里，396 个词早于抽取日出现，占比约 62%。这说明当前 `source_extract` 的日期覆盖不足会严重污染“首现”判断。`raw 中无法匹配` 的部分也有意义：说明 LLM 已经在做归纳/改写，后续状态池不能只靠精确子串，还需要保存 `first_message_id`、`relation_evidence` 和归一化别名。
+在能用原文子串匹配验证的 640 个词里，396 个词早于抽取日出现，占比约 62%。这说明非连续抽取会严重污染“首现”判断。`raw 中无法匹配` 的部分也有意义：说明 LLM 会做归纳/改写，后续结构抽取必须保存可回指原文的 `anchor_span / modifier_span / novel_span / relation_evidence`。
 
 ### 11.2 现有放量榜的偏差
 
-用现有 `sn source scan` 跑 2026-05-30 和 2026-05-31 后，能看到几个典型偏差：
+用旧放量扫描跑 2026-05-30 和 2026-05-31 后，能看到几个典型偏差：
 
 - 2026-05-30 TOP 出现 `打破国外垄断`。
 - 2026-05-31 TOP 出现 `未来产业`、`十五五规划`。
@@ -728,7 +728,7 @@ PCB 很成熟
 
 ## 16. 模型设计
 
-### 16.1 V0：规则 + LLM 结构抽取
+### 16.1 V0：规则证据 + 结构抽取
 
 V0 不需要复杂机器学习，先做高精度闭环。
 
@@ -738,6 +738,7 @@ V0 不需要复杂机器学习，先做高精度闭环。
 - 计算历史冷度、组合冷度、扩散、带股。
 - 维护状态池。
 - 控制推送名额。
+- 不维护固定“成熟产业链词表”。成熟锚点必须由本地历史出现频次证明，而不是写死 `PCB/CPO/AI` 这类业务词。
 
 LLM 负责：
 
@@ -749,6 +750,8 @@ LLM 负责：
 - 给出噪音原因。
 
 LLM 输出必须能回指原文。如果不能在 `title_or_lead` 或正文中定位到明确 span，就降级为 `watching` 或丢弃。新颖度判断不问 LLM，而是用这些 span 生成 `signal_id` 后查本地历史。
+
+当前代码已进入阶段二：`sn source extract` 负责低频调用 LLM 生成可回指原文的结构 span，`sn source scan` 强依赖这些结构产物做 as-of 证据计算。没有 `source_extract/structures.json` 时，`scan` 直接提示先抽取，不再回退本地规则抽词。
 
 V0 的目标是让老板看到 3-5 条“能问”的信号，而不是追求召回所有概念。
 
@@ -819,6 +822,31 @@ V0 的目标是让老板看到 3-5 条“能问”的信号，而不是追求召
 - 是否能把 `CIPB-PCB` 识别为高新颖度但低扩散的 source_seed。
 - 是否能把已存在较久的 `PCB 钻针` 降级为旧主题延续或交易映射。
 
+当前代码落点：
+
+- `sn source scan` 已切到新口径：按 `as_of_time` 扫描源头种子，输出 `anchor_span / modifier_span / novel_span / relation_type / signal_id`。
+- `sn source extract` 已切到阶段二结构抽取：低频调用 LLM，只保存可回指原文的 `structures.json`。
+- 历史证据不再只看放量：分别统计 `prior_anchor_mentions`、`prior_modifier_mentions`、`prior_exact_mentions`、`prior_combo_mentions`。
+- 成熟锚点不靠代码里的业务词表判断，而是由 `source_extract/structures.json` 的结构 span 和本地历史语料共同验证。
+- `sn source scan` 强依赖 `source_extract/structures.json`；缺失时直接提示先运行 `sn source extract --date <date>`。
+- 实时运行只使用 `as_of_time` 之前的数据；`followup_senders / followup_groups / mapped_stocks` 只表示截至 `as_of_time` 已经发生的状态，不再假装当天能看到 T+3/T+5。
+- 本地 `source-radar` 定时任务已移除；恢复推送前先用人工审阅模式跑样本。
+
+示例：
+
+```bash
+uv run sn source extract --date 2026-05-13 --limit 50
+
+uv run sn source scan --date 2026-05-13 --as-of 20:00
+
+uv run sn source scan --since-minutes 240 \
+  --markdown-out ~/.config/stock-news/schedule/source-radar.md
+```
+
+注意：当前实现已进入阶段二。泛化表达由 `sn source extract` 低频接管，产出 `anchor_span / modifier_span / novel_span / relation_type`。新旧判断仍由本地历史索引完成，不能交给 LLM 主观判断。
+
+默认输出只展示 `source_seed / spreading_watch / mapped`，`old_theme / crowded` 作为已关闭状态隐藏；需要复盘时再加 `--include-closed`。扫描范围默认包含 `个人群` 和 `个人消息`，因为老板给的源头例子可能来自单点私聊转发。
+
 ### 阶段二：低频试运行
 
 目标：每天 1-2 次人工审阅，不直接打扰老板。
@@ -829,6 +857,7 @@ V0 的目标是让老板看到 3-5 条“能问”的信号，而不是追求召
 - 每日扩散升级摘要。
 - 人工标注入口或本地标注文件。
 - 误报/漏报复盘。
+- 接入 `sn source extract`：低频调用 LLM 做结构抽取，只输出可回指原文的 span 和关系；本地规则继续负责新颖度、早期度、扩散和个股映射。
 
 验收：
 
@@ -846,6 +875,7 @@ V0 的目标是让老板看到 3-5 条“能问”的信号，而不是追求召
 - 同一 `signal_id` 只推一次。
 - 后续状态升级只推关键变化，例如从 `source_seed` 到 `spreading_watch` 或 `mapped`。
 - `crowded` 只做提醒，不当作新机会。
+- 实时推送链路强依赖结构产物，但不实时调用 LLM；盘前或低频任务必须先生成 `structures.json`。如果结构产物缺失，当轮 scan 跳过并提示补抽取。
 
 验收：
 

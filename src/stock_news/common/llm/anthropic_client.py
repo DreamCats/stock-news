@@ -35,6 +35,7 @@ def _payload(
     model: str | None,
     temperature: float | None,
     max_tokens: int | None,
+    disable_thinking: bool,
 ) -> dict[str, object]:
     system_parts: list[str] = []
     anthropic_messages: list[dict[str, str]] = []
@@ -56,6 +57,8 @@ def _payload(
     }
     if system_parts:
         payload["system"] = "\n\n".join(system_parts)
+    if disable_thinking:
+        payload["thinking"] = {"type": "disabled"}
     return payload
 
 
@@ -67,14 +70,19 @@ def chat_anthropic(
     max_tokens: int | None = None,
     disable_thinking: bool = False,
 ) -> str:
-    del disable_thinking
-
     url = f"{_normalize_base_url(provider.base_url)}/v1/messages"
     with httpx.Client(timeout=provider.timeout) as client:
         resp = client.post(
             url,
             headers=_headers(provider),
-            json=_payload(provider, messages, model, temperature, max_tokens),
+            json=_payload(
+                provider,
+                messages,
+                model,
+                temperature,
+                max_tokens,
+                disable_thinking,
+            ),
         )
         resp.raise_for_status()
         data = resp.json()

@@ -52,7 +52,9 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
 
     \b
     源头雷达：
-      sn source scan --start 2026-05-01 --end 2026-05-13
+      sn source extract --date today         # 低频 LLM 结构抽取
+      sn source scan                         # 扫描今天截至当前时间的源头候选
+      sn source scan --date 2026-05-11 --as-of 09:20
 
     \b
     LLM 管理：

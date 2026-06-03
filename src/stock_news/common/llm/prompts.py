@@ -13,9 +13,14 @@ _DYNAMIC_MARKERS: dict[str, tuple[str, ...]] = {
     "extract": ("发送人：{sender}",),
     "extract_batch": ("以下是待抽取的消息：",),
     "source_extract": ("发送人：{sender}",),
-    "source_extract_batch": ("以下是待抽取的研究消息：",),
+    "source_extract_batch": ("以下是待抽取的消息：",),
     "opinion": ("发送人：{sender}",),
     "opinion_batch": ("发送人：{sender}",),
+}
+
+_LEGACY_SOURCE_EXTRACT_MARKERS: dict[str, tuple[str, ...]] = {
+    "source_extract": ("is_source_candidate", "source_type", "terms"),
+    "source_extract_batch": ("is_source_candidate", "source_type", "terms"),
 }
 
 BUILTIN_PROMPTS: dict[str, str] = {
@@ -65,21 +70,31 @@ BUILTIN_PROMPTS: dict[str, str] = {
 消息内容：
 {raw_content}""",
     "source_extract": """\
-你是一个源头雷达抽取器。从研究类投研消息中判断是否存在“源头信号”，返回纯 JSON（不要 markdown 代码块）。
+你是源头雷达的结构抽取器。你只负责从消息原文中切出“成熟锚点 + 陌生修饰/新表达”的组合结构，返回纯 JSON（不要 markdown 代码块）。
 
-源头信号指可能较早指向新概念、新应用、新政策催化、产业变化的消息。普通周报、会议/调研通知、路演直播、常规研报标题、宽泛行业标签、已很常见的大主题、单纯个股推荐都不是源头信号。
+不要判断这个概念新不新、早不早、会不会涨；这些由本地历史证据计算。你只做可回指原文的 span 抽取。
+
+必须满足：
+- anchor_span、modifier_span、novel_span 都必须是原文中能定位到的短语或连续子串。
+- novel_span 是完整组合，例如“半导体化的PCB”“CIPB-PCB”“AI电源”。
+- anchor_span 是成熟产业链、技术、产品、客户、工艺、指标或场景锚点。
+- modifier_span 是让这个锚点出现新意的修饰、路径、解法、前缀、应用或机制。
+- 单纯个股推荐、带股票清单、上市/第一股、估值弹性、财报/业绩、买入逻辑不是源头候选。
+- 没有明确组合结构时，is_candidate=false。
 
 字段：
-- is_source_candidate: true/false
-- source_type: new_concept/new_application/policy_catalyst/industry_change/noise
-- terms: 源头概念或方向，最多 3 个，必须是完整短语，不要残句、泛词或券商/栏目名
-- clean_title: 归一后的简短标题
+- is_candidate: true/false
+- anchor_span: 原文中的成熟锚点 span
+- modifier_span: 原文中的陌生修饰 span
+- novel_span: 原文中的完整组合 span
+- relation_type: A化B/prefix-anchor/modifier-anchor/anchor-extension/other
+- relation_evidence: 支撑这个结构关系的原文短句
+- ask_question: 拿去问产业大佬的一句话问题
 - confidence: 0.0 到 1.0
-- reject_reason: 不是源头信号时填写原因，否则填 null
-- evidence: 支撑判断的关键短句
+- reject_reason: 不是候选时填写原因，否则 null
 
 返回格式：
-{{"is_source_candidate": true, "source_type": "new_concept|new_application|policy_catalyst|industry_change|noise", "terms": ["..."], "clean_title": "...", "confidence": 0.0, "reject_reason": null, "evidence": "..."}}
+{{"is_candidate": true, "anchor_span": "...", "modifier_span": "...", "novel_span": "...", "relation_type": "A化B|prefix-anchor|modifier-anchor|anchor-extension|other", "relation_evidence": "...", "ask_question": "...", "confidence": 0.0, "reject_reason": null}}
 
 发送人：{sender}
 消息内容：
@@ -188,47 +203,63 @@ BUILTIN_PROMPTS: dict[str, str] = {
 以下是待抽取的消息：
 {messages}""",
     "source_extract_batch": """\
-你是一个源头雷达抽取器。请对以下多条研究类投研消息逐一判断是否存在“源头信号”，返回纯 JSON 数组（不要 markdown 代码块）。
+你是源头雷达的结构抽取器。请对以下多条投研消息逐一切出“成熟锚点 + 陌生修饰/新表达”的组合结构，返回纯 JSON 数组（不要 markdown 代码块）。
 
-源头信号指可能较早指向新概念、新应用、新政策催化、产业变化的消息。普通周报、会议/调研通知、路演直播、常规研报标题、宽泛行业标签、已很常见的大主题、单纯个股推荐都不是源头信号。
+不要判断这个概念新不新、早不早、会不会涨；这些由本地历史证据计算。你只做可回指原文的 span 抽取。
 
 每个结果必须包含 index 字段（对应输入编号）。
 字段：
-- is_source_candidate: true/false
-- source_type: new_concept/new_application/policy_catalyst/industry_change/noise
-- terms: 源头概念或方向，最多 3 个，必须是完整短语，不要残句、泛词或券商/栏目名
-- clean_title: 归一后的简短标题
+- is_candidate: true/false
+- anchor_span: 原文中的成熟锚点 span
+- modifier_span: 原文中的陌生修饰 span
+- novel_span: 原文中的完整组合 span
+- relation_type: A化B/prefix-anchor/modifier-anchor/anchor-extension/other
+- relation_evidence: 支撑这个结构关系的原文短句
+- ask_question: 拿去问产业大佬的一句话问题
 - confidence: 0.0 到 1.0
-- reject_reason: 不是源头信号时填写原因，否则填 null
-- evidence: 支撑判断的关键短句
+- reject_reason: 不是候选时填写原因，否则 null
 
 返回格式：
-[{{"index": 1, "is_source_candidate": true, "source_type": "new_concept|new_application|policy_catalyst|industry_change|noise", "terms": ["..."], "clean_title": "...", "confidence": 0.0, "reject_reason": null, "evidence": "..."}}]
+[{{"index": 1, "is_candidate": true, "anchor_span": "...", "modifier_span": "...", "novel_span": "...", "relation_type": "A化B|prefix-anchor|modifier-anchor|anchor-extension|other", "relation_evidence": "...", "ask_question": "...", "confidence": 0.0, "reject_reason": null}}]
 
 注意：
-- 必须为每条消息都返回结果，不要遗漏
-- index 必须与输入编号严格对应
-- 不确定时宁可 is_source_candidate=false，并说明 reject_reason
+- 必须为每条消息都返回结果，不要遗漏。
+- index 必须与输入编号严格对应。
+- anchor_span、modifier_span、novel_span 必须能在原文中定位；不能输出总结词、改写词或脑补词。
+- 单纯个股推荐、带股票清单、上市/第一股、估值弹性、财报/业绩、买入逻辑不是源头候选。
+- 没有明确组合结构时，is_candidate=false，并说明 reject_reason。
 
-以下是待抽取的研究消息：
+以下是待抽取的消息：
 {messages}""",
 }
 
 
 def ensure_prompts_dir() -> None:
-    """确保 prompts 目录存在，写入内置模板（不覆盖已有）."""
+    """确保 prompts 目录存在；内置 prompt 统一由主库管理.
+
+    ~/.config/stock-news/prompts 只保留显式自定义覆盖，避免默认模板在配置目录
+    生成副本后和主库版本漂移。
+    """
     PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-    for name, content in BUILTIN_PROMPTS.items():
+    for name in _LEGACY_SOURCE_EXTRACT_MARKERS:
         path = PROMPTS_DIR / f"{name}.txt"
         if not path.exists():
-            path.write_text(content, encoding="utf-8")
+            continue
+        current = path.read_text(encoding="utf-8")
+        suffix = "legacy" if _is_legacy_source_extract_copy(name, current) else "local"
+        backup = PROMPTS_DIR / f"{name}.{suffix}.txt"
+        if not backup.exists():
+            backup.write_text(current, encoding="utf-8")
+        path.unlink()
 
 
 def load_prompt(name: str) -> str:
     """加载 prompt 模板，优先用户自定义，回退内置."""
     user_path = PROMPTS_DIR / f"{name}.txt"
-    if user_path.exists():
-        return user_path.read_text(encoding="utf-8")
+    if user_path.exists() and name not in _LEGACY_SOURCE_EXTRACT_MARKERS:
+        content = user_path.read_text(encoding="utf-8")
+        if not _is_legacy_source_extract_copy(name, content):
+            return content
     if name in BUILTIN_PROMPTS:
         return BUILTIN_PROMPTS[name]
     raise FileNotFoundError(f"Prompt 模板 '{name}' 不存在")
@@ -255,6 +286,13 @@ def _is_builtin_copy(name: str, content: str) -> bool:
     return builtin is not None and content.strip() == builtin.strip()
 
 
+def _is_legacy_source_extract_copy(name: str, content: str) -> bool:
+    markers = _LEGACY_SOURCE_EXTRACT_MARKERS.get(name)
+    if markers is None:
+        return False
+    return all(marker in content for marker in markers)
+
+
 def render_prompt(name: str, **kwargs: str) -> str:
     """加载并渲染 prompt 模板."""
     template = load_prompt(name)
@@ -274,9 +312,11 @@ def render_prompt_messages(name: str, **kwargs: str) -> list[dict[str, str]]:
         ]
 
     plain_path = PROMPTS_DIR / f"{name}.txt"
-    if plain_path.exists():
+    if plain_path.exists() and name not in _LEGACY_SOURCE_EXTRACT_MARKERS:
         content = plain_path.read_text(encoding="utf-8")
-        if not _is_builtin_copy(name, content):
+        if not _is_builtin_copy(name, content) and not _is_legacy_source_extract_copy(
+            name, content
+        ):
             return [{"role": "user", "content": content.format(**kwargs)}]
 
     split_prompt = _split_builtin_prompt(name)

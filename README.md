@@ -121,6 +121,18 @@ sn strategy generate --date today --window-minutes 20 --top 5
 ~/.config/stock-news/data/<date>/strategy/strategy.xlsx
 ```
 
+### 源头雷达 `sn source`
+
+```bash
+sn source extract --date today --limit 50
+sn source scan
+sn source scan --date 2026-05-11 --as-of 09:20
+```
+
+`extract` 是低频阶段二结构抽取，会调用 LLM，只负责从原文中切出 `anchor_span / modifier_span / novel_span / relation_type` 并保存到 `source_extract/structures.json`。新旧判断仍由 `scan` 的本地历史索引完成。
+
+`scan` 强依赖当日 `source_extract/structures.json`。如果结构产物不存在，会提示先运行 `sn source extract --date <date>`；它不会再回退到本地规则抽词。扫描本身仍是 0 token 的 as-of 证据计算：判断“成熟锚点 + 陌生组合”在本地历史里冷不冷、当前是否还早、截至 `as_of` 是否已经接力或映射个股。
+
 ### 盘中编排 `sn workflow`
 
 ```bash
@@ -238,6 +250,8 @@ sn --json analyze show --date today
   → sn analyze opinion  → opinions.json（观点链: new/reinforce/revise/reverse/withdraw）
   → sn workflow run     → 编排 20 分钟增量链路
   → sn strategy generate → strategy.xlsx（盘中策略快报: 推荐个股 + 推荐人可信度）
+  → sn source extract   → structures.json（低频 LLM 结构抽取）
+  → sn source scan      → 源头候选（默认今天/当前时间，as-of 本地证据）
 
 Tushare → sn market → SQLite 缓存 → 回测引擎（TODO）
 ```
@@ -288,6 +302,8 @@ storage:
         ├── classified/      # 分类结果
         ├── extracted/       # 推荐抽取
         ├── opinions/        # 观点链
+        ├── source_extract/  # 源头结构抽取 structures.json
+        ├── source_scan/     # 源头雷达 Markdown
         ├── workflow/        # workflow 最近一次运行状态
         └── strategy/         # 策略快报 JSON / Markdown / state
 ```
