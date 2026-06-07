@@ -31,9 +31,19 @@ from stock_news.models import (
 
 MessageFormat = Literal["text", "post", "markdown", "markdown_v2"]
 
+SOURCE_RADAR_TITLE = "🚨 今日源头雷达：先看这几个可能发酵的新信号"
+
 
 def _json_output(ctx: click.Context) -> bool:
     return bool(ctx.obj and ctx.obj.get("json_output"))
+
+
+def _default_title_for_markdown_file(markdown_file: Path | None) -> str | None:
+    if markdown_file is None:
+        return None
+    if markdown_file.name.startswith("source-radar"):
+        return SOURCE_RADAR_TITLE
+    return None
 
 
 def _echo_json(payload: dict[str, object]) -> None:
@@ -429,7 +439,7 @@ def send_cmd(
         message = DeliveryMessage(
             format=cast(MessageFormat, fmt),
             text=message_text,
-            title=title,
+            title=title or _default_title_for_markdown_file(markdown_file),
         )
         results = send_targets(
             targets,

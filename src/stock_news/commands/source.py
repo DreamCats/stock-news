@@ -211,6 +211,7 @@ def _render_seed_llm_markdown(result: SourceSeedResult, fallback: str) -> str:
     if not markdown.startswith("#"):
         title = fallback.splitlines()[0]
         markdown = f"{title}\n\n{markdown}"
+    markdown = _ensure_numbered_brief_items(markdown)
     return markdown.rstrip() + "\n"
 
 
@@ -221,6 +222,32 @@ def _normalize_llm_markdown(markdown: str) -> str:
         if len(lines) >= 2:
             markdown = "\n".join(lines[1:-1]).strip()
     return markdown
+
+
+def _ensure_numbered_brief_items(markdown: str) -> str:
+    lines = markdown.splitlines()
+    numbered_count = sum(1 for line in lines if _is_numbered_line(line.strip()))
+    if numbered_count >= 2:
+        return markdown
+
+    output: list[str] = []
+    index = 1
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            output.append(line)
+            continue
+        if _is_numbered_line(stripped):
+            output.append(line)
+            index += 1
+            continue
+        output.append(f"{index}. {stripped}")
+        index += 1
+    return "\n".join(output)
+
+
+def _is_numbered_line(line: str) -> bool:
+    return len(line) > 3 and line[0].isdigit() and line[1] == "." and line[2] == " "
 
 
 def _render_seed_detail_markdown(result: SourceSeedResult) -> str:

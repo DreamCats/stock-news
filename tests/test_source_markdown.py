@@ -142,6 +142,27 @@ def test_source_markdown_uses_llm_brief(monkeypatch) -> None:
     assert "长原文" in prompt_text
 
 
+def test_source_markdown_numbers_llm_paragraphs(monkeypatch) -> None:
+    def fake_get_provider_for_task(task: str):
+        return "fake-provider", object()
+
+    def fake_chat(messages, **kwargs):
+        return (
+            "# 源头雷达 · 06-07 10:00\n\n**方向一**：自然段。\n\n**方向二**：自然段。"
+        )
+
+    monkeypatch.setattr(
+        "stock_news.common.llm.client.get_provider_for_task",
+        fake_get_provider_for_task,
+    )
+    monkeypatch.setattr("stock_news.common.llm.client.chat", fake_chat)
+
+    markdown = _render_seed_markdown(_result((_candidate(1),)), use_llm_brief=True)
+
+    assert "1. **方向一**：自然段。" in markdown
+    assert "2. **方向二**：自然段。" in markdown
+
+
 def test_source_markdown_falls_back_when_llm_fails(monkeypatch) -> None:
     def fake_get_provider_for_task(task: str):
         return "fake-provider", object()

@@ -514,6 +514,79 @@ def test_delivery_send_markdown(
     assert sent[0].title == "日报"
 
 
+def test_delivery_source_radar_file_uses_readable_title(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _isolated_config(monkeypatch, tmp_path)
+    sent: list[DeliveryMessage] = []
+    markdown_file = tmp_path / "source-radar.md"
+    markdown_file.write_text("## 源头雷达\n\n1. A", encoding="utf-8")
+
+    def fake_send(
+        _provider_name: str,
+        _provider: object,
+        target_name: str,
+        _target: object,
+        message: DeliveryMessage,
+        *,
+        idempotency_key: str | None = None,
+    ) -> DeliveryResult:
+        sent.append(message)
+        return DeliveryResult(
+            target=target_name,
+            recipient_type="user",
+            recipient_id="ou_maifeng",
+            ok=True,
+        )
+
+    monkeypatch.setattr(delivery_service, "send_message", fake_send)
+    runner = CliRunner()
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "provider",
+            "add-feishu",
+            "feishu-main",
+            "--app-id",
+            "cli_xxx",
+            "--app-secret",
+            "secret",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "delivery",
+            "target",
+            "add-user",
+            "maifeng",
+            "--provider",
+            "feishu-main",
+            "--open-id",
+            "ou_maifeng",
+        ],
+    )
+
+    result = runner.invoke(
+        main,
+        [
+            "--json",
+            "delivery",
+            "send",
+            "--target",
+            "maifeng",
+            "--markdown-file",
+            str(markdown_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["data"]["sent"] == 1
+    assert sent[0].title == "🚨 今日源头雷达：先看这几个可能发酵的新信号"
+
+
 def test_delivery_send_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
