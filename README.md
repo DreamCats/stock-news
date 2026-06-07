@@ -131,7 +131,7 @@ sn source scan --date 2026-05-11 --as-of 09:20
 
 `extract` 是低频阶段二结构抽取，会调用 LLM，只负责从原文中切出 `anchor_span / modifier_span / novel_span / relation_type` 并保存到 `source_extract/structures.json`。新旧判断仍由 `scan` 的本地历史索引完成。
 
-`scan` 强依赖当日 `source_extract/structures.json`。如果结构产物不存在，会提示先运行 `sn source extract --date <date>`；它不会再回退到本地规则抽词。扫描本身仍是 0 token 的 as-of 证据计算：判断“成熟锚点 + 陌生组合”在本地历史里冷不冷、当前是否还早、截至 `as_of` 是否已经接力或映射个股。
+`scan` 强依赖当日 `source_extract/structures.json`。如果结构产物不存在，会提示先运行 `sn source extract --date <date>`；它不会再回退到本地规则抽词。扫描本身仍是 0 token 的 as-of 证据计算：判断“成熟锚点 + 陌生组合”在本地历史里冷不冷、当前是否还早、截至 `as_of` 是否已经接力或映射个股。写 Markdown 时默认会把完整候选交给 LLM 改写成老板版短摘要；需要纯本地输出可加 `--no-llm-brief`。
 
 ### 盘中编排 `sn workflow`
 

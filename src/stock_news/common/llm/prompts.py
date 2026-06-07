@@ -14,6 +14,7 @@ _DYNAMIC_MARKERS: dict[str, tuple[str, ...]] = {
     "extract_batch": ("以下是待抽取的消息：",),
     "source_extract": ("发送人：{sender}",),
     "source_extract_batch": ("以下是待抽取的消息：",),
+    "source_brief": ("候选明细：",),
     "opinion": ("发送人：{sender}",),
     "opinion_batch": ("发送人：{sender}",),
 }
@@ -231,6 +232,20 @@ BUILTIN_PROMPTS: dict[str, str] = {
 
 以下是待抽取的消息：
 {messages}""",
+    "source_brief": """\
+你是给老板发投研源头提示的助理。请把源头候选压缩成自然、可扫读的老板版 Markdown。
+
+要求：
+- 只输出 Markdown 正文，不要解释你的任务。
+- 保留标题。
+- 只输出 2 到 3 条，每条 1 到 2 句话。
+- 每条都要说清：这是什么新东西、为什么值得现在看一眼、当前有没有扩散或接力迹象。
+- 不要表格，不要算法指标名，不要原文长摘录，不要出现 anchor/modifier/exact/combo/status 等内部字段。
+- 不要重新排序或脑补事实；只基于候选明细改写。
+- 全文控制在 350 字以内。
+
+候选明细：
+{detail_markdown}""",
 }
 
 

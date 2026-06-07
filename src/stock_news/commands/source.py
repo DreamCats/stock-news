@@ -26,6 +26,8 @@ STATUS_LABELS = {
 
 STATUS_ORDER = ("source_seed", "spreading_watch", "mapped", "old_theme")
 
+BRIEF_MARKDOWN_LIMIT = 3
+
 
 def _seed_to_dict(candidate: SourceSeedCandidate) -> dict[str, object]:
     first = candidate.first
@@ -148,7 +150,80 @@ def _format_seed_plain(result: SourceSeedResult) -> None:
             _format_candidate_plain(index, candidate)
 
 
-def _render_seed_markdown(result: SourceSeedResult) -> str:
+def _render_seed_markdown(
+    result: SourceSeedResult,
+    *,
+    use_llm_brief: bool = False,
+) -> str:
+    fallback = _render_seed_brief_markdown(result)
+    if not use_llm_brief or not result.candidates:
+        return fallback
+    try:
+        return _render_seed_llm_markdown(result, fallback)
+    except Exception as exc:
+        click.echo(f"LLM 源头总结失败，已使用本地短版: {exc}", err=True)
+        return fallback
+
+
+def _render_seed_brief_markdown(result: SourceSeedResult) -> str:
+    label = _seed_window_label(result)
+    lines = [
+        f"# 源头雷达 · {result.as_of_time.strftime('%m-%d %H:%M')}",
+        "",
+        f"{label}，扫描 {result.scanned_messages} 条，"
+        f"筛出 {result.candidate_count} 个候选。",
+    ]
+    if not result.candidates:
+        hidden = result.hidden_count
+        suffix = f"已隐藏 {hidden} 个旧主题。" if hidden else ""
+        lines.append(f"本窗口暂时没有值得追问的新源头。{suffix}")
+        return "\n".join(lines) + "\n"
+
+    focus_candidates = _select_brief_candidates(result.candidates)
+    lines.append("")
+    for index, candidate in enumerate(focus_candidates, start=1):
+        lines.append(f"{index}. {_format_brief_candidate(candidate)}")
+    omitted = max(len(result.candidates) - len(focus_candidates), 0)
+    if omitted:
+        lines += ["", f"其余 {omitted} 个低优先级候选已省略。"]
+    return "\n".join(lines) + "\n"
+
+
+def _render_seed_llm_markdown(result: SourceSeedResult, fallback: str) -> str:
+    from stock_news.common.llm.client import chat, get_provider_for_task
+    from stock_news.common.llm.prompts import render_prompt_messages
+
+    provider_name, _ = get_provider_for_task("source_brief")
+    messages = render_prompt_messages(
+        "source_brief",
+        detail_markdown=_render_seed_detail_markdown(result),
+    )
+    markdown = chat(
+        messages,
+        provider_name=provider_name,
+        temperature=0.2,
+        max_tokens=800,
+        disable_thinking=True,
+    )
+    markdown = _normalize_llm_markdown(markdown)
+    if not markdown:
+        raise ValueError("LLM 返回为空")
+    if not markdown.startswith("#"):
+        title = fallback.splitlines()[0]
+        markdown = f"{title}\n\n{markdown}"
+    return markdown.rstrip() + "\n"
+
+
+def _normalize_llm_markdown(markdown: str) -> str:
+    markdown = markdown.strip()
+    if markdown.startswith("```"):
+        lines = markdown.splitlines()
+        if len(lines) >= 2:
+            markdown = "\n".join(lines[1:-1]).strip()
+    return markdown
+
+
+def _render_seed_detail_markdown(result: SourceSeedResult) -> str:
     label = _seed_window_label(result)
     lines = [
         f"# 源头雷达 · {label}",
@@ -169,10 +244,7 @@ def _render_seed_markdown(result: SourceSeedResult) -> str:
         lines.append(f"> 本窗口未发现可行动源头候选。{suffix}")
         return "\n".join(lines) + "\n"
 
-    lines += [
-        f"## TOP {len(result.candidates)}",
-        "",
-    ]
+    lines += [f"## TOP {len(result.candidates)}", ""]
     for status, items in _bucket_candidates(result.candidates).items():
         if not items:
             continue
@@ -230,6 +302,61 @@ def _render_seed_markdown(result: SourceSeedResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _select_brief_candidates(
+    candidates: tuple[SourceSeedCandidate, ...],
+) -> tuple[SourceSeedCandidate, ...]:
+    selected: list[SourceSeedCandidate] = []
+    selected_ids: set[str] = set()
+    for status in STATUS_ORDER:
+        if status not in ACTIONABLE_STATUSES:
+            continue
+        item = next((item for item in candidates if item.status == status), None)
+        if item is None:
+            continue
+        selected.append(item)
+        selected_ids.add(item.signal_id)
+        if len(selected) >= BRIEF_MARKDOWN_LIMIT:
+            return tuple(selected)
+    for item in candidates:
+        if item.signal_id in selected_ids:
+            continue
+        selected.append(item)
+        if len(selected) >= BRIEF_MARKDOWN_LIMIT:
+            break
+    return tuple(selected)
+
+
+def _format_brief_candidate(candidate: SourceSeedCandidate) -> str:
+    status = STATUS_LABELS.get(candidate.status, candidate.status)
+    first_time = candidate.first.row.message.message_time.strftime("%H:%M")
+    spread = (
+        f"{candidate.asof_mentions}次/{candidate.asof_groups}群/"
+        f"{candidate.asof_senders}人"
+    )
+    followup = (
+        f"，接力 {candidate.followup_senders}人/{candidate.followup_groups}群"
+        if candidate.followup_senders or candidate.followup_groups
+        else ""
+    )
+    stocks = (
+        f"，个股 {'、'.join(candidate.mapped_stocks[:3])}"
+        if candidate.mapped_stocks
+        else ""
+    )
+    if candidate.status == "source_seed":
+        action = f"先问 {candidate.anchor_span}+{candidate.modifier_span} 是不是新线索"
+    elif candidate.status == "spreading_watch":
+        action = "已有扩散，重点确认是否继续跨群接力"
+    elif candidate.status == "mapped":
+        action = "已映射个股，重点确认能否形成交易主线"
+    else:
+        action = f"关注 {candidate.anchor_span}+{candidate.modifier_span}"
+    return (
+        f"**{candidate.novel_span}**：{status}，{first_time} 首现；"
+        f"{action}；当前 {spread}{followup}{stocks}。"
+    )
+
+
 def _default_as_of(end: date) -> datetime:
     now = datetime.now().replace(microsecond=0)
     if end >= now.date():
@@ -281,8 +408,9 @@ def scan_sources(
     lookback_days: int = 30,
     write_markdown: bool = False,
     markdown_out: str | None = None,
+    use_llm_brief: bool = True,
 ) -> None:
-    """扫描本地 raw 数据中的源头种子，不调用外部 API."""
+    """扫描本地 raw 数据中的源头种子；Markdown 落盘默认会调用 LLM 改写."""
     cfg = load()
     if since_minutes is not None and start_str is not None:
         raise click.ClickException("--since-minutes 和 --start 不能同时使用")
@@ -339,7 +467,10 @@ def scan_sources(
             md_path.parent.mkdir(parents=True, exist_ok=True)
         else:
             md_path = radar_markdown_path(cfg.storage.data_dir, end)
-        md_path.write_text(_render_seed_markdown(result), encoding="utf-8")
+        md_path.write_text(
+            _render_seed_markdown(result, use_llm_brief=use_llm_brief),
+            encoding="utf-8",
+        )
 
     if json_output:
         click.echo(

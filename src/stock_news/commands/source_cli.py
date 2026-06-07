@@ -131,12 +131,20 @@ def extract(
     "--markdown",
     "write_markdown",
     is_flag=True,
-    help="把榜单渲染成 Markdown 落盘到 data/<end>/source_scan/radar.md",
+    help="把老板版 Markdown 落盘到 data/<end>/source_scan/radar.md",
 )
 @click.option(
     "--markdown-out",
     "markdown_out",
-    help="自定义 Markdown 输出路径（指定即落盘，覆盖默认路径）",
+    help="自定义老板版 Markdown 输出路径（指定即落盘，覆盖默认路径）",
+)
+@click.option(
+    "--no-llm-brief",
+    "use_llm_brief",
+    is_flag=True,
+    flag_value=False,
+    default=True,
+    help="Markdown 落盘时不调用 LLM，使用本地短版",
 )
 @click.pass_context
 def scan(
@@ -152,6 +160,7 @@ def scan(
     include_closed: bool,
     write_markdown: bool,
     markdown_out: str | None,
+    use_llm_brief: bool,
 ) -> None:
     """扫描源头种子（需先有 source_extract/structures.json）."""
     from stock_news.commands.source import scan_sources
@@ -169,4 +178,5 @@ def scan(
         json_output=ctx.obj["json_output"],
         write_markdown=write_markdown,
         markdown_out=markdown_out,
+        use_llm_brief=use_llm_brief,
     )
