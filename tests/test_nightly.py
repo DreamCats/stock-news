@@ -230,7 +230,10 @@ def test_publish_nightly_html_uses_year_month_path(tmp_path, monkeypatch) -> Non
         assert kwargs["env"]["SSHPASS"] == "secret"
         return Completed()
 
-    monkeypatch.setattr("stock_news.signals.nightly.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "stock_news.signals.nightly_report.publish.subprocess.run",
+        fake_run,
+    )
 
     output = publish_nightly_html(
         html_path,
