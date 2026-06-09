@@ -192,6 +192,20 @@ class StrategyConfig(BaseModel):
     sender_min_win_rate: float = 0.5
 
 
+class NightlyPublishConfig(BaseModel):
+    host: str = ""
+    user: str = ""
+    password: str | None = None
+    port: int = 22
+    remote_dir: str = "/var/www/stock-news"
+    url_prefix: str = ""
+    sshpass_path: str = "sshpass"
+
+
+class PublishConfig(BaseModel):
+    nightly: NightlyPublishConfig = NightlyPublishConfig()
+
+
 class AppConfig(BaseModel):
     api: APIConfig = APIConfig()
     llm: LLMConfig = LLMConfig()
@@ -200,3 +214,4 @@ class AppConfig(BaseModel):
     schedule: ScheduleConfig = ScheduleConfig()
     delivery: DeliveryConfig = DeliveryConfig()
     strategy: StrategyConfig = StrategyConfig()
+    publish: PublishConfig = PublishConfig()

@@ -113,7 +113,7 @@ def _content(message: DeliveryMessage) -> tuple[str, str]:
     if message.format == "text":
         return "text", json.dumps({"text": message.text}, ensure_ascii=False)
 
-    title = message.title or "stock-news"
+    title = message.title or ""
     if message.format in ("markdown", "markdown_v2"):
         return "post", json.dumps(
             {

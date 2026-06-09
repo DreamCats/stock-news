@@ -27,6 +27,7 @@ def save(cfg: AppConfig) -> None:
         yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
+    CONFIG_FILE.chmod(0o600)
 
 
 def set_nested(cfg: AppConfig, key: str, value: str) -> AppConfig:
@@ -50,6 +51,8 @@ def set_nested(cfg: AppConfig, key: str, value: str) -> AppConfig:
         import json as json_mod
 
         target[parts[-1]] = json_mod.loads(value)
+    elif old_value is None:
+        target[parts[-1]] = value or None
     else:
         target[parts[-1]] = value
 

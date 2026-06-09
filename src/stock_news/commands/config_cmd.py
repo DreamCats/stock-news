@@ -18,6 +18,8 @@ def _masked(value: object) -> object:
                 word in lowered for word in ("secret", "api_key", "token", "webhook")
             ):
                 out[key] = "***" if item else item
+            elif "password" in lowered:
+                out[key] = "***" if item else item
             else:
                 out[key] = _masked(item)
         return out
@@ -51,7 +53,10 @@ def set_value(key: str, value: str) -> None:
     save(cfg)
     shown = (
         "***"
-        if any(word in key.lower() for word in ("secret", "api_key", "token"))
+        if any(
+            word in key.lower()
+            for word in ("secret", "api_key", "token", "password", "webhook")
+        )
         else value
     )
     click.echo(f"已设置 {key} = {shown}")

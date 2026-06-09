@@ -11,6 +11,8 @@ from pathlib import Path
 import click
 
 from stock_news.common.config import load
+from stock_news.common.exceptions import ConfigError
+from stock_news.common.llm.task_pool import resolve_provider_pool, select_provider
 from stock_news.common.storage import load_messages
 from stock_news.models import AppConfig, ClassifiedMessage, MessageCategory, RawMessage
 from stock_news.source.models import SourceStructureItem
@@ -223,30 +225,17 @@ def _source_extract_provider_pool(
     cfg: AppConfig,
     provider_name: str | None,
 ) -> tuple[str | None, ...]:
-    if provider_name:
-        if provider_name not in cfg.llm.providers:
-            raise click.ClickException(f"LLM provider 不存在: {provider_name}")
-        return (provider_name,)
-
-    providers = tuple(cfg.llm.provider_pools.get("source_extract") or ())
-    missing = [name for name in providers if name not in cfg.llm.providers]
-    if missing:
-        raise click.ClickException(
-            "source_extract provider_pools 包含未配置 provider: " + ",".join(missing)
-        )
-    if providers:
-        return providers
-    routed = cfg.llm.task_routing.get("source_extract")
-    if routed:
-        return (routed,)
-    return (None,)
+    try:
+        return resolve_provider_pool(cfg, "source_extract", provider_name)
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _select_provider(
     providers: tuple[str | None, ...],
     batch_index: int,
 ) -> str | None:
-    return providers[batch_index % len(providers)]
+    return select_provider(providers, batch_index)
 
 
 def _eligible_messages(
@@ -279,10 +268,7 @@ def _eligible_messages(
 
 def _classified_path(data_dir: str, dt: date) -> Path:
     return (
-        Path(data_dir).expanduser()
-        / dt.isoformat()
-        / "classified"
-        / "classified.json"
+        Path(data_dir).expanduser() / dt.isoformat() / "classified" / "classified.json"
     )
 
 

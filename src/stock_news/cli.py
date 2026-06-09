@@ -16,6 +16,7 @@ from stock_news.commands.delivery import delivery
 from stock_news.commands.fetch_cli import fetch
 from stock_news.commands.llm_cli import llm
 from stock_news.commands.market_cli import market
+from stock_news.commands.nightly_cli import nightly
 from stock_news.commands.schedule_cmd import schedule
 from stock_news.commands.source_cli import source
 from stock_news.commands.strategy_cli import strategy
@@ -57,6 +58,10 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
       sn source scan --date 2026-05-11 --as-of 09:20
 
     \b
+    每日晚报：
+      sn nightly generate                  # 生成上一交易日15:00到今天21:00晚报 HTML
+
+    \b
     LLM 管理：
       sn llm add deepseek --base-url ... --model ... --api-key ...
       sn llm list                            # 查看 provider
@@ -83,6 +88,7 @@ def _register_commands() -> None:
     main.add_command(backfill)
     main.add_command(analyze)
     main.add_command(strategy)
+    main.add_command(nightly)
     main.add_command(workflow)
     main.add_command(source)
     main.add_command(llm)
