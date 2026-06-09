@@ -93,6 +93,34 @@ def test_weekdays_job_skips_outside_configured_days(tmp_path: Path) -> None:
     assert summary.results == []
 
 
+def test_tick_prioritizes_at_jobs_over_every_jobs(tmp_path: Path) -> None:
+    order_path = tmp_path / "order.txt"
+
+    def append_cmd(name: str) -> str:
+        script = (
+            "from pathlib import Path; "
+            f"Path({str(order_path)!r}).open('a').write({name + chr(10)!r})"
+        )
+        return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+
+    schedule = _schedule(
+        tmp_path,
+        [
+            ScheduleJob(id="workflow", command=append_cmd("workflow"), every="30m"),
+            ScheduleJob(id="nightly", command=append_cmd("nightly"), at="21:00"),
+        ],
+    )
+
+    summary = tick(schedule, now=datetime(2026, 6, 9, 21, 3, tzinfo=timezone.utc))
+
+    assert summary.due_count == 2
+    assert [item.job_id for item in summary.results] == ["nightly", "workflow"]
+    assert order_path.read_text(encoding="utf-8").splitlines() == [
+        "nightly",
+        "workflow",
+    ]
+
+
 def test_schedule_command_is_registered_without_alias() -> None:
     result = CliRunner().invoke(main, ["schedule", "--help"])
 

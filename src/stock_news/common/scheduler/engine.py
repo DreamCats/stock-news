@@ -86,6 +86,12 @@ def is_due(job: ScheduleJob, job_state: JobState, now: datetime) -> tuple[bool, 
     return True, "scheduled_time_elapsed"
 
 
+def _due_job_priority(job: ScheduleJob, index: int) -> tuple[int, str, int]:
+    if job.at is not None:
+        return (0, job.at, index)
+    return (1, "", index)
+
+
 def run_job(
     schedule: ScheduleFile,
     job: ScheduleJob,
@@ -166,14 +172,14 @@ def run_job(
 def tick(schedule: ScheduleFile, *, now: datetime | None = None) -> TickSummary:
     started_at = now or _now()
     state = read_state(schedule.state_path)
-    due_jobs: list[ScheduleJob] = []
+    due_jobs: list[tuple[int, ScheduleJob]] = []
     skipped = 0
 
-    for job in schedule.jobs:
+    for index, job in enumerate(schedule.jobs):
         job_state = state.get(job.id, JobState())
         due, reason = is_due(job, job_state, started_at)
         if due:
-            due_jobs.append(job)
+            due_jobs.append((index, job))
         else:
             skipped += 1
             _append_jsonl(
@@ -186,7 +192,8 @@ def tick(schedule: ScheduleFile, *, now: datetime | None = None) -> TickSummary:
                 },
             )
 
-    results = [run_job(schedule, job) for job in due_jobs]
+    due_jobs.sort(key=lambda item: _due_job_priority(item[1], item[0]))
+    results = [run_job(schedule, job) for _, job in due_jobs]
     finished_at = _now()
     summary = TickSummary(
         started_at=started_at.isoformat(),
