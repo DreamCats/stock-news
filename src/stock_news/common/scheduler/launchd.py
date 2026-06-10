@@ -38,7 +38,7 @@ def write_plist(schedule: ScheduleFile, sn_executable: str | None = None) -> Pat
     sn_path = sn_executable or resolve_sn_executable()
     payload = {
         "Label": LABEL,
-        "ProgramArguments": [sn_path, "schedule", "tick"],
+        "ProgramArguments": [sn_path, "schedule", "tick", "--quiet"],
         "StartInterval": parse_duration(schedule.tick_interval),
         "RunAtLoad": True,
         "StandardOutPath": str(schedule.log_path / "launchd.log"),

@@ -193,7 +193,7 @@ sn config set storage.data_dir ~/my-data
 ### 定时调度 `sn schedule`
 
 ```bash
-sn schedule install                  # 安装 launchd 10 分钟 tick
+sn schedule install                  # 安装 launchd，按 schedule.yaml 的 tick_interval tick
 sn schedule list                     # 列出 job 和最近状态
 sn schedule tick                     # 手动执行一轮 due 检查
 sn schedule run fetch                # 手动强跑某个 job

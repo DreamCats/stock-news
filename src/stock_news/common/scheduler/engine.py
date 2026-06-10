@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
 
 from stock_news.common.scheduler.config import (
     ScheduleFile,
@@ -16,6 +14,7 @@ from stock_news.common.scheduler.config import (
     parse_duration,
 )
 from stock_news.common.scheduler.lock import FileLock, LockBusy
+from stock_news.common.scheduler.logging import append_jsonl
 from stock_news.common.scheduler.runner import run_command
 from stock_news.common.scheduler.state import JobState, read_state, write_state
 
@@ -44,12 +43,6 @@ class TickSummary:
 
 def _now() -> datetime:
     return datetime.now().astimezone()
-
-
-def _append_jsonl(path: Path, event: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
 def _as_aware(value: datetime | None, now: datetime) -> datetime | None:
@@ -110,7 +103,7 @@ def run_job(
             job_state.last_status = "running"
             state[job.id] = job_state
             write_state(schedule.state_path, state)
-            _append_jsonl(
+            append_jsonl(
                 log_path,
                 {"ts": current.isoformat(), "status": "started"},
             )
@@ -148,7 +141,7 @@ def run_job(
                 event["stdout_tail"] = result.stdout_tail
             if result.stderr_tail:
                 event["stderr_tail"] = result.stderr_tail
-            _append_jsonl(log_path, event)
+            append_jsonl(log_path, event)
 
             return JobRunSummary(
                 job_id=job.id,
@@ -158,7 +151,7 @@ def run_job(
                 duration_ms=result.duration_ms,
             )
     except LockBusy:
-        _append_jsonl(
+        append_jsonl(
             log_path,
             {
                 "ts": current.isoformat(),
@@ -182,7 +175,7 @@ def tick(schedule: ScheduleFile, *, now: datetime | None = None) -> TickSummary:
             due_jobs.append((index, job))
         else:
             skipped += 1
-            _append_jsonl(
+            append_jsonl(
                 schedule.tick_log_path,
                 {
                     "ts": started_at.isoformat(),
@@ -203,24 +196,8 @@ def tick(schedule: ScheduleFile, *, now: datetime | None = None) -> TickSummary:
         skipped_count=skipped + sum(1 for item in results if item.status == "skipped"),
         results=results,
     )
-    _append_jsonl(
+    append_jsonl(
         schedule.tick_log_path,
         {"ts": finished_at.isoformat(), "status": "tick_done", **summary.to_dict()},
     )
     return summary
-
-
-def read_last_log_event(path: Path) -> dict[str, object] | None:
-    if not path.exists():
-        return None
-    last_line = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            last_line = line
-    if last_line is None:
-        return None
-    try:
-        data = json.loads(last_line)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None

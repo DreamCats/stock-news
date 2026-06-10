@@ -43,7 +43,7 @@ class ScheduleJob(BaseModel):
 class ScheduleFile(BaseModel):
     """schedule.yaml 顶层配置."""
 
-    tick_interval: str = "10m"
+    tick_interval: str = "5m"
     log_dir: str = "~/.config/stock-news/schedule/logs"
     state_file: str = "~/.config/stock-news/schedule/state.json"
     lock_dir: str = "~/.config/stock-news/schedule/locks"

@@ -14,7 +14,8 @@ from stock_news.common.scheduler.config import (
     ScheduleJob,
     load_schedule,
 )
-from stock_news.common.scheduler.engine import read_last_log_event, run_job, tick
+from stock_news.common.scheduler.engine import run_job, tick
+from stock_news.common.scheduler.logging import read_last_log_event
 from stock_news.common.scheduler.state import read_state, set_enabled
 
 
@@ -77,12 +78,15 @@ def uninstall_cmd(ctx: click.Context) -> None:
 
 
 @schedule.command("tick")
+@click.option("--quiet", is_flag=True, help="只写调度日志，不向 stdout 输出摘要")
 @click.pass_context
-def tick_cmd(ctx: click.Context) -> None:
+def tick_cmd(ctx: click.Context, quiet: bool) -> None:
     """执行一轮 due job 检查."""
     summary = tick(_load())
     if ctx.obj["json_output"]:
         _echo_json({"ok": True, "data": summary.to_dict()})
+    elif quiet:
+        return
     else:
         click.echo(
             "tick 完成: "

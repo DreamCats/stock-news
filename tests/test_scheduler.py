@@ -8,8 +8,10 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from stock_news.cli import main
+from stock_news.commands import schedule_cmd
 from stock_news.common.scheduler.config import ScheduleFile, ScheduleJob
 from stock_news.common.scheduler.engine import is_due, tick
+from stock_news.common.scheduler.logging import append_jsonl
 from stock_news.common.scheduler.state import JobState, read_state, write_state
 
 
@@ -130,3 +132,26 @@ def test_schedule_command_is_registered_without_alias() -> None:
     result = CliRunner().invoke(main, ["--help"])
     assert "schedule" in result.output
     assert "  sched " not in result.output
+
+
+def test_schedule_tick_quiet_suppresses_stdout(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(schedule_cmd, "_load", lambda: _schedule(tmp_path, []))
+
+    result = CliRunner().invoke(main, ["schedule", "tick", "--quiet"])
+
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_schedule_log_rotates_when_size_limit_is_reached(tmp_path: Path) -> None:
+    log_path = tmp_path / "tick.log"
+    log_path.write_text("x" * 20, encoding="utf-8")
+
+    append_jsonl(
+        log_path,
+        {"ts": "2026-06-10T21:00:00+08:00", "status": "ok"},
+        max_bytes=10,
+    )
+
+    assert (tmp_path / "tick.log.1").read_text(encoding="utf-8") == "x" * 20
+    assert '"status": "ok"' in log_path.read_text(encoding="utf-8")
