@@ -23,6 +23,7 @@ src/stock_news/
 ├── core/concurrency/          # 通用固定 worker 任务池
 ├── core/config/               # YAML 配置读写、运行时加载/保存与点号路径修改
 ├── core/db/                   # 通用 SQLite 连接工具
+├── core/llm/                  # OpenAI / Anthropic 协议客户端和 provider 选择
 ├── core/market/               # 股票公司和代码的 market.db 存储
 ├── core/scheduler/            # 定时判断和状态 JSON 存储
 ├── core/tushare/              # Tushare 代理协议客户端

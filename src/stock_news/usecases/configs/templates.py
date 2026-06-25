@@ -25,7 +25,11 @@ def default_model_providers_config() -> ModelProvidersConfigFile:
         default_provider="mimo",
         providers={
             "glm": _provider("<glm-base-url>/v1", "<glm-api-key>", "<glm-model>"),
-            "kimi": _provider("<kimi-base-url>/v1", "<kimi-api-key>", "<kimi-model>"),
+            "kimi": _kimi_provider(
+                "<kimi-base-url>/v1",
+                "<kimi-api-key>",
+                "<kimi-model>",
+            ),
             "mimo": _provider("<mimo-base-url>/v1", "<mimo-api-key>", "<mimo-model>"),
             "minimax": _provider(
                 "<minimax-base-url>/v1",
@@ -193,5 +197,26 @@ def _provider(base_url: str, api_key: str, model: str) -> LLMProviderConfig:
         model=model,
         max_tokens=None,
         temperature=0.1,
+        thinking_enabled=False,
+        thinking_budget_tokens=None,
+        timeout=300.0,
+    )
+
+
+def _kimi_provider(base_url: str, api_key: str, model: str) -> LLMProviderConfig:
+    return LLMProviderConfig(
+        api="anthropic-messages",
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        headers={
+            "User-Agent": "KimiCLI/1.30.0",
+            "X-Kimi-Client": "KimiCLI",
+            "X-Kimi-Client-Version": "1.30.0",
+        },
+        max_tokens=1024,
+        temperature=0.1,
+        thinking_enabled=False,
+        thinking_budget_tokens=None,
         timeout=300.0,
     )

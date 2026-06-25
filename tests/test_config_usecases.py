@@ -134,6 +134,15 @@ def test_model_providers_template_matches_schema() -> None:
     assert cfg.default_provider == "mimo"
     assert cfg.providers["glm"].api == "anthropic-messages"
     assert cfg.providers["glm"].max_tokens is None
+    assert cfg.providers["glm"].thinking_enabled is False
+    assert cfg.providers["glm"].thinking_budget_tokens is None
+    assert cfg.providers["kimi"].max_tokens == 1024
+    assert cfg.providers["kimi"].headers == {
+        "User-Agent": "KimiCLI/1.30.0",
+        "X-Kimi-Client": "KimiCLI",
+        "X-Kimi-Client-Version": "1.30.0",
+    }
+    assert cfg.providers["kimi"].thinking_enabled is False
     assert cfg.task_routing["classify"] == "glm"
     assert cfg.task_routing["source_extract"] == "kimi"
     assert cfg.provider_pools["source_extract"] == [

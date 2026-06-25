@@ -78,6 +78,8 @@ class LLMProviderConfig(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     max_tokens: int | None = None
     temperature: float = 0.1
+    thinking_enabled: bool = False
+    thinking_budget_tokens: int | None = None
     timeout: float = 300.0
 
 

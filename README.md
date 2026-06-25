@@ -78,6 +78,10 @@ Tushare 代理不会保存 token；`sn tushare sync-stocks` 会把本地
 `tushare.token` 放进每次代理请求。`market.db` 默认路径是
 `~/.config/stock-news/market.db`，当前只保存股票公司和代码映射，不保存历史行情。
 
+`core/llm` 提供后续 usecase 可复用的模型调用能力：统一 `chat` 入口，
+底层支持 OpenAI chat completions 协议和 Anthropic messages 协议，并按
+`models.yaml` 的 `default_provider`、`task_routing`、`provider_pools` 选择 provider。
+
 项目内定时任务不依赖系统 cron。日常用 `sn schedule start` 后台启动；
 `sn schedule serve` 保留为前台调试入口。后台进程仍然只是项目自己的
 `schedule serve` 进程：
