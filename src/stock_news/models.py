@@ -139,6 +139,28 @@ class ScheduleTushareSyncConfig(BaseModel):
         return self
 
 
+class ScheduleCatalystStockExcelConfig(BaseModel):
+    """催化标的 Excel 定时任务配置。"""
+
+    enabled: bool = True
+    every: str = "1h"
+    window: str = "1h"
+    active_start: str = "09:00"
+    active_end: str = "23:00"
+    channel_targets: list[str] = Field(
+        default_factory=lambda: ["dreamboys", "wecom-push-1"]
+    )
+    channel_routes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_catalyst_stock_excel(self) -> ScheduleCatalystStockExcelConfig:
+        _validate_duration(self.every)
+        _validate_duration(self.window)
+        _validate_clock(self.active_start)
+        _validate_clock(self.active_end)
+        return self
+
+
 class ScheduleConfig(BaseModel):
     """定时任务配置文件。"""
 
@@ -149,6 +171,9 @@ class ScheduleConfig(BaseModel):
     )
     tushare_sync: ScheduleTushareSyncConfig = Field(
         default_factory=ScheduleTushareSyncConfig
+    )
+    catalyst_stock_excel: ScheduleCatalystStockExcelConfig = Field(
+        default_factory=ScheduleCatalystStockExcelConfig
     )
 
     @model_validator(mode="after")

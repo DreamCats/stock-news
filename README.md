@@ -90,12 +90,20 @@ Tushare 代理不会保存 token；`sn tushare sync-stocks` 会把本地
 催化词库合并、催化词匹配、微信装饰文本归一化和内容去重 key。催化词配置采用
 内置词库 + `configs/catalysts.yaml` 用户增量覆盖的方式。
 
+`usecases/strategy_tasks/catalyst_stock_excel` 提供第一版策略任务编排：
+`run_catalyst_excel_task` 会拉取指定时间窗口微信原始消息，复用
+`core/source_messages` 做催化过滤，再用本地 `market.db` 识别标的，生成按标的去重、
+推荐人合并的 xlsx，并按传入的 channel targets/routes 发送。默认产物目录是
+`~/.config/stock-news/data/<YYYY-MM-DD>/excel/`。
+
 项目内定时任务不依赖系统 cron。日常用 `sn schedule start` 后台启动；
 `sn schedule serve` 保留为前台调试入口。后台进程仍然只是项目自己的
 `schedule serve` 进程：
 
 - `wechat_fetch`：默认每 30 分钟拉一次最近 30 分钟微信数据。
 - `tushare_sync`：默认每天 08:30 同步一次股票基础信息。
+- `catalyst_stock_excel`：默认 09:00-23:00 每 1 小时生成最近 1 小时催化标的
+  Excel，并发送到 `dreamboys` 和 `wecom-push-1`。
 
 配置文件保持固定结构，不做通用 job/workflow：
 
@@ -109,6 +117,16 @@ wechat_fetch:
 tushare_sync:
   enabled: true
   at: "08:30"
+catalyst_stock_excel:
+  enabled: true
+  every: 1h
+  window: 1h
+  active_start: "09:00"
+  active_end: "23:00"
+  channel_targets:
+    - dreamboys
+    - wecom-push-1
+  channel_routes: []
 ```
 
 后台管理：

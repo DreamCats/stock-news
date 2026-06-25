@@ -4,6 +4,7 @@
 """
 
 from stock_news.usecases.scheduler.service import (
+    TASK_CATALYST_STOCK_EXCEL,
     ScheduledRunSummary,
     ScheduledTaskView,
     build_schedule_status,
@@ -15,6 +16,7 @@ from stock_news.usecases.scheduler.service import (
 __all__ = [
     "ScheduledRunSummary",
     "ScheduledTaskView",
+    "TASK_CATALYST_STOCK_EXCEL",
     "build_schedule_status",
     "due_task_ids",
     "run_due_tasks",

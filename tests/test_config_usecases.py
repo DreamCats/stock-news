@@ -225,6 +225,15 @@ def test_schedule_template_matches_schema() -> None:
     assert cfg.wechat_fetch.window == "30m"
     assert cfg.tushare_sync.enabled is True
     assert cfg.tushare_sync.at == "08:30"
+    assert cfg.catalyst_stock_excel.enabled is True
+    assert cfg.catalyst_stock_excel.every == "1h"
+    assert cfg.catalyst_stock_excel.window == "1h"
+    assert cfg.catalyst_stock_excel.active_start == "09:00"
+    assert cfg.catalyst_stock_excel.active_end == "23:00"
+    assert cfg.catalyst_stock_excel.channel_targets == [
+        "dreamboys",
+        "wecom-push-1",
+    ]
 
     rendered = render_schedule_template()
     parsed = yaml.safe_load(rendered)

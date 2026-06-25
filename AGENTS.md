@@ -33,6 +33,7 @@ src/stock_news/
 ├── usecases/configs/          # 分文件配置加载、保存、模板
 ├── usecases/market_sync/      # Tushare 同步用例
 ├── usecases/scheduler/        # 固定定时任务执行用例
+├── usecases/strategy_tasks/   # 策略任务集合，子目录按任务拆分
 └── usecases/wechat_fetch/     # 微信拉取用例
 ```
 
@@ -113,8 +114,9 @@ rtk .venv/bin/sn schedule serve               # 前台常驻，主要用于调�
 ## 项目内定时任务
 
 - 定时任务不是系统级 cron；日常用 `sn schedule start` 后台启动项目自己的 `schedule serve` 进程。
-- 固定任务：`wechat_fetch` 和 `tushare_sync`，不要恢复通用 `jobs[].command` workflow。
+- 固定任务：`wechat_fetch`、`tushare_sync`、`catalyst_stock_excel`，不要恢复通用 `jobs[].command` workflow。
 - 默认 `wechat_fetch` 每 30 分钟拉最近 30 分钟；默认 `tushare_sync` 每天 08:30 跑一次。
+- 默认 `catalyst_stock_excel` 在 09:00-23:00 每 1 小时跑一次，生成最近 1 小时 Excel 并发送 `dreamboys`、`wecom-push-1`。
 - 状态写入 `~/.config/stock-news/schedule_state.json`，只记录最近一次执行状态。
 - 后台进程文件是 `~/.config/stock-news/schedule.pid`，日志是 `~/.config/stock-news/schedule.log`。
 - 进程重启后按当前时间继续判断，不补跑所有错过窗口。
@@ -124,6 +126,14 @@ rtk .venv/bin/sn schedule serve               # 前台常驻，主要用于调�
 - `core/source_messages` 是可复用底座，只做文本归一化、去重 key、催化词库合并和匹配。
 - 催化词默认用内置词库，`configs/catalysts.yaml` 只表达禁用、追加和自定义分类。
 - core matcher 不读 DB、不强制“有标的才保留”；是否过滤无标的消息由具体 usecase 决定。
+
+## 策略任务
+
+- `usecases/strategy_tasks/catalyst_stock_excel` 是第一版定时任务候选任务。
+- 父包 `usecases/strategy_tasks` 只做常用入口 re-export，具体实现放任务子目录。
+- 参数接收时间窗口、sources、channel targets/routes、refresh/fetch/send 等开关，方便 scheduler 后续复用。
+- 任务流程：微信窗口拉取 -> 催化词过滤 -> 本地 `market.db` 标的识别 -> 按标的去重并合并推荐人 -> 生成 xlsx -> 发送渠道。
+- 默认输出目录：`~/.config/stock-news/data/<YYYY-MM-DD>/excel/`。
 
 ## 开发规则
 

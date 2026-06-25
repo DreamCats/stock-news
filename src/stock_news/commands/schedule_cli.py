@@ -28,6 +28,7 @@ from stock_news.usecases.scheduler import (
     run_scheduled_task,
 )
 from stock_news.usecases.scheduler.service import (
+    TASK_CATALYST_STOCK_EXCEL,
     TASK_TUSHARE_SYNC,
     TASK_WECHAT_FETCH,
     TaskId,
@@ -116,7 +117,12 @@ def restart(ctx: click.Context) -> None:
 
 
 @schedule.command("run")
-@click.argument("task", type=click.Choice(["wechat", "market", "tushare", "all"]))
+@click.argument(
+    "task",
+    type=click.Choice(
+        ["wechat", "market", "tushare", "catalyst-excel", "strategy", "all"]
+    ),
+)
 @click.pass_context
 def run_command(ctx: click.Context, task: str) -> None:
     """手动执行一次固定任务。"""
@@ -218,7 +224,9 @@ def _resolve_task_ids(task: str) -> list[TaskId]:
         "wechat": [TASK_WECHAT_FETCH],
         "market": [TASK_TUSHARE_SYNC],
         "tushare": [TASK_TUSHARE_SYNC],
-        "all": [TASK_WECHAT_FETCH, TASK_TUSHARE_SYNC],
+        "catalyst-excel": [TASK_CATALYST_STOCK_EXCEL],
+        "strategy": [TASK_CATALYST_STOCK_EXCEL],
+        "all": [TASK_WECHAT_FETCH, TASK_TUSHARE_SYNC, TASK_CATALYST_STOCK_EXCEL],
     }
     return task_map[task]
 

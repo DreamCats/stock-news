@@ -5,6 +5,7 @@ market.db 当前只保存股票公司和代码映射，暂不保存历史行情�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -194,6 +195,42 @@ class MarketSQLiteStore:
                     keyword,
                     limit,
                 ),
+            ).fetchall()
+        return [_row_to_company(row) for row in rows]
+
+    def list_companies(
+        self,
+        *,
+        list_statuses: Sequence[str] | None = ("L",),
+    ) -> list[StockCompany]:
+        """列出股票公司，默认只返回上市状态。"""
+
+        self.init_schema()
+        params: list[object] = []
+        where = ""
+        if list_statuses is not None:
+            statuses = [status for status in list_statuses if status]
+            if statuses:
+                placeholders = ", ".join("?" for _ in statuses)
+                where = f"WHERE list_status IN ({placeholders})"
+                params.extend(statuses)
+
+        with sqlite_connection(self.path) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT ts_code,
+                       symbol,
+                       name,
+                       area,
+                       industry,
+                       market,
+                       list_date,
+                       list_status
+                FROM stock_companies
+                {where}
+                ORDER BY ts_code
+                """,
+                params,
             ).fetchall()
         return [_row_to_company(row) for row in rows]
 

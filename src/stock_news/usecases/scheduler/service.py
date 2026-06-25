@@ -1,13 +1,13 @@
 """固定定时任务执行服务。
 
-这里只编排当前项目明确需要的两个任务：微信数据源拉取和 Tushare 基础信息同步。
+这里只编排当前项目明确需要的固定任务，不恢复通用 jobs workflow。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 from typing import Literal
 
 from stock_news.core.scheduler import (
@@ -21,11 +21,13 @@ from stock_news.core.scheduler import (
 from stock_news.core.wechat import TimeWindow
 from stock_news.models import AppConfig
 from stock_news.usecases.market_sync import sync_stock_companies
+from stock_news.usecases.strategy_tasks import run_catalyst_excel_task
 from stock_news.usecases.wechat_fetch import fetch_wechat_messages
 
-TaskId = Literal["wechat_fetch", "tushare_sync"]
+TaskId = Literal["wechat_fetch", "tushare_sync", "catalyst_stock_excel"]
 TASK_WECHAT_FETCH: TaskId = "wechat_fetch"
 TASK_TUSHARE_SYNC: TaskId = "tushare_sync"
+TASK_CATALYST_STOCK_EXCEL: TaskId = "catalyst_stock_excel"
 
 
 @dataclass(frozen=True)
@@ -59,11 +61,13 @@ class SchedulerActions:
 
     wechat_fetch: Callable[[AppConfig, datetime], str]
     tushare_sync: Callable[[AppConfig, datetime], str]
+    catalyst_stock_excel: Callable[[AppConfig, datetime], str]
 
 
 DEFAULT_ACTIONS = SchedulerActions(
     wechat_fetch=lambda cfg, now: _run_wechat_fetch(cfg, now),
     tushare_sync=lambda cfg, now: _run_tushare_sync(cfg, now),
+    catalyst_stock_excel=lambda cfg, now: _run_catalyst_stock_excel(cfg, now),
 )
 
 
@@ -95,6 +99,26 @@ def due_task_ids(
         last_started_at=tushare_state.last_started_at,
     ):
         due.append(TASK_TUSHARE_SYNC)
+
+    catalyst_state = store.get(TASK_CATALYST_STOCK_EXCEL)
+    catalyst_base_time = (
+        catalyst_state.last_finished_at or catalyst_state.last_started_at
+    )
+    catalyst_config = config.schedule.catalyst_stock_excel
+    if (
+        catalyst_config.enabled
+        and _within_active_window(
+            now,
+            start=parse_clock(catalyst_config.active_start),
+            end=parse_clock(catalyst_config.active_end),
+        )
+        and is_interval_due(
+            now=now,
+            every=parse_duration(catalyst_config.every),
+            last_started_at=catalyst_base_time,
+        )
+    ):
+        due.append(TASK_CATALYST_STOCK_EXCEL)
 
     return due
 
@@ -191,6 +215,22 @@ def build_schedule_status(
             due=TASK_TUSHARE_SYNC in due,
             state=states.get(TASK_TUSHARE_SYNC, ScheduledTaskState()),
         ),
+        _task_view(
+            task_id=TASK_CATALYST_STOCK_EXCEL,
+            enabled=(
+                config.schedule.enabled and config.schedule.catalyst_stock_excel.enabled
+            ),
+            trigger=(
+                f"every={config.schedule.catalyst_stock_excel.every} "
+                f"window={config.schedule.catalyst_stock_excel.window} "
+                f"active={config.schedule.catalyst_stock_excel.active_start}-"
+                f"{config.schedule.catalyst_stock_excel.active_end} "
+                "targets="
+                f"{','.join(config.schedule.catalyst_stock_excel.channel_targets)}"
+            ),
+            due=TASK_CATALYST_STOCK_EXCEL in due,
+            state=states.get(TASK_CATALYST_STOCK_EXCEL, ScheduledTaskState()),
+        ),
     ]
 
 
@@ -204,6 +244,8 @@ def _run_action(
         return actions.wechat_fetch(config, now)
     if task_id == TASK_TUSHARE_SYNC:
         return actions.tushare_sync(config, now)
+    if task_id == TASK_CATALYST_STOCK_EXCEL:
+        return actions.catalyst_stock_excel(config, now)
     raise ValueError(f"未知定时任务: {task_id}")
 
 
@@ -233,6 +275,48 @@ def _run_tushare_sync(config: AppConfig, now: datetime) -> str:
         f"fetched={summary.fetched} inserted={summary.inserted} "
         f"updated={summary.updated} unchanged={summary.unchanged}"
     )
+
+
+def _run_catalyst_stock_excel(config: AppConfig, now: datetime) -> str:
+    schedule = config.schedule.catalyst_stock_excel
+    window_size = parse_duration(schedule.window)
+    window = TimeWindow(start=now - window_size, end=now)
+    result = run_catalyst_excel_task(
+        config=config,
+        window=window,
+        sources=config.wechat.sources,
+        channel_targets=schedule.channel_targets,
+        channel_routes=schedule.channel_routes,
+        now=now,
+        fetch=True,
+        send=True,
+    )
+    fetch_summary = result.fetch_summary
+    fetch_part = ""
+    if fetch_summary is not None:
+        fetch_part = (
+            f" fetched={fetch_summary.fetched}"
+            f" inserted={fetch_summary.inserted}"
+            f" errors={len(fetch_summary.errors)}"
+        )
+        if fetch_summary.errors:
+            raise RuntimeError(fetch_part.strip())
+    return (
+        f"scanned={result.scanned_messages}"
+        f" catalyst={result.catalyst_messages}"
+        f" stock_messages={result.stock_messages}"
+        f" rows={len(result.rows)}"
+        f" sent={len(result.send_results)}"
+        f" file={result.excel_path}"
+        f"{fetch_part}"
+    )
+
+
+def _within_active_window(now: datetime, *, start: time, end: time) -> bool:
+    current = now.time().replace(second=0, microsecond=0)
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
 
 
 def _task_view(

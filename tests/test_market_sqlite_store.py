@@ -62,6 +62,27 @@ def test_search_matches_code_symbol_and_name(tmp_path: Path) -> None:
     assert store.search("银行")[0].ts_code == "000001.SZ"
 
 
+def test_list_companies_defaults_to_listed_status(tmp_path: Path) -> None:
+    store = MarketSQLiteStore(tmp_path / "market.db")
+    store.upsert_companies(
+        [
+            StockCompany(ts_code="600519.SH", symbol="600519", name="贵州茅台"),
+            StockCompany(
+                ts_code="000001.SZ",
+                symbol="000001",
+                name="平安银行",
+                list_status="D",
+            ),
+        ]
+    )
+
+    listed = store.list_companies()
+    all_rows = store.list_companies(list_statuses=None)
+
+    assert [item.ts_code for item in listed] == ["600519.SH"]
+    assert [item.ts_code for item in all_rows] == ["000001.SZ", "600519.SH"]
+
+
 def test_init_schema_migrates_old_table_without_list_status(tmp_path: Path) -> None:
     db_path = tmp_path / "market.db"
     with sqlite3.connect(db_path) as conn:

@@ -71,6 +71,15 @@ def show(json_output: bool) -> None:
             f"{'启用' if cfg.schedule.tushare_sync.enabled else '停用'} "
             f"at={cfg.schedule.tushare_sync.at}"
         )
+        click.echo(
+            "催化 Excel 定时: "
+            f"{'启用' if cfg.schedule.catalyst_stock_excel.enabled else '停用'} "
+            f"every={cfg.schedule.catalyst_stock_excel.every} "
+            f"window={cfg.schedule.catalyst_stock_excel.window} "
+            f"active={cfg.schedule.catalyst_stock_excel.active_start}-"
+            f"{cfg.schedule.catalyst_stock_excel.active_end} "
+            f"targets={', '.join(cfg.schedule.catalyst_stock_excel.channel_targets)}"
+        )
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
         custom_count = len(
             [
