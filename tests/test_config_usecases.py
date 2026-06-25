@@ -122,6 +122,7 @@ def test_wechat_source_template_matches_schema() -> None:
     cfg = default_wechat_source_config()
 
     assert cfg.base_url == "https://<wechat-api-base-url>"
+    assert cfg.db_path == "~/.config/stock-news/wechat.db"
     assert cfg.sources == ["个人消息", "个人群"]
     assert cfg.timeout == 30
     assert cfg.auth.type == "none"

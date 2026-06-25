@@ -61,6 +61,7 @@ class WechatSourceConfig(BaseModel):
     """微信数据源配置。"""
 
     base_url: str = "https://example.com/api"
+    db_path: str = "~/.config/stock-news/wechat.db"
     sources: list[str] = Field(default_factory=lambda: ["个人消息", "个人群"])
     timeout: int = 30
     auth: WechatAuthConfig = Field(default_factory=WechatAuthConfig)

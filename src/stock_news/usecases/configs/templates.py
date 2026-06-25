@@ -58,6 +58,7 @@ def default_wechat_source_config() -> WechatSourceConfigFile:
 
     return WechatSourceConfigFile(
         base_url="https://<wechat-api-base-url>",
+        db_path="~/.config/stock-news/wechat.db",
         sources=["个人消息", "个人群"],
         timeout=30,
     )

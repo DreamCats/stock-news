@@ -50,6 +50,7 @@ def show(json_output: bool) -> None:
         click.echo(f"默认模型: {cfg.models.default_provider or '未配置'}")
         click.echo(f"模型供应商: {', '.join(cfg.models.providers) or '未配置'}")
         click.echo(f"微信 API: {cfg.wechat.base_url}")
+        click.echo(f"微信 DB: {cfg.wechat.db_path}")
         click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
         click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
         click.echo(f"定时任务数: {len(cfg.schedule.jobs)}")

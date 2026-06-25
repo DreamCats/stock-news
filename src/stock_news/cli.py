@@ -9,6 +9,7 @@ import click
 
 from stock_news import __version__
 from stock_news.commands.config_cli import config
+from stock_news.commands.wechat_cli import wechat
 
 
 @click.group()
@@ -25,6 +26,10 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
       sn config set wechat.timeout 60        # 修改配置
 
     \b
+    微信数据源：
+      sn wechat fetch --last 30m             # 拉取最近 30 分钟原始消息
+
+    \b
     JSON 输出（Agent 友好）：
       sn --json config show
     """
@@ -35,6 +40,7 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
 
 def _register_commands() -> None:
     main.add_command(config)
+    main.add_command(wechat)
 
 
 _register_commands()

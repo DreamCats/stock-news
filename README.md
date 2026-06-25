@@ -1,6 +1,6 @@
 # stock-news (sn)
 
-投研信息流 CLI 的重构起点。当前版本只保留配置能力，旧的采集、分析、策略、回测、投递执行、SQLite 缓存和历史样例数据已经移除。
+投研信息流 CLI 的重构起点。当前版本保留配置能力，并新增微信数据源 SQLite 增量存储底座。旧的采集命令、分析、策略、回测、投递执行和历史样例数据已经移除。
 
 ## 安装
 
@@ -44,12 +44,20 @@ sn config set delivery.routes.default.format markdown
 ├── schedule.yaml            # 定时任务配置
 └── configs/
     ├── models.yaml          # 模型供应商：glm/kimi/mimo/minimax
-    ├── wechat.yaml          # 微信数据源 API、鉴权、拉取参数
+    ├── wechat.yaml          # 微信数据源 API、鉴权、拉取参数、SQLite 路径
     ├── tushare.yaml         # Tushare 代理配置
     └── channel.yaml         # 飞书 bot / 企业微信渠道配置
 ```
 
 `sn config set` 会写入拆分后的配置文件，不再回写旧 `config.yaml`。
+
+微信原始消息的默认 SQLite 路径是 `~/.config/stock-news/wechat.db`。增量规则是：
+
+- `message_id` 唯一，重复消息不会重复写入。
+- `source + window_start + window_end` 记录拉取窗口状态。
+- 已成功且超过安全延迟的窗口会跳过；失败窗口和最近窗口会重拉。
+- 默认按 `wechat.fetch.slice_hours: 1` 拆成 1 小时切片，最后一片允许不足 1 小时。
+- 并发执行复用 `core/concurrency` 的固定 worker 池，任意切片完成后立刻补入下一个切片。
 
 ## 开发验证
 

@@ -4,9 +4,9 @@ This guide is for coding agents working in `/Users/bytedance/Work/tools/cli/stoc
 
 ## 当前项目形态
 
-- 当前分支处于重构早期，只保留配置能力。
+- 当前分支处于重构早期，保留配置能力和微信 SQLite 增量存储底座。
 - CLI 入口只注册 `sn config`。
-- 旧的微信拉取、LLM 执行、行情、SQLite、本地历史数据、策略、source-radar、workflow、delivery 执行和 scheduler 执行层都已移除。
+- 旧的微信拉取命令、LLM 执行、行情、本地历史数据、策略、source-radar、workflow、delivery 执行和 scheduler 执行层都已移除。
 - 后续业务入口会从 `usecases/` 重新设计后再接回 CLI。
 
 ## 目录
@@ -18,7 +18,9 @@ src/stock_news/
 ├── commands/config_cli.py     # config 命令 click 接线
 ├── commands/config_cmd.py     # config 命令实现
 ├── common/config.py           # 运行时配置加载/保存兼容入口
+├── core/concurrency/          # 通用固定 worker 任务池
 ├── core/config/store.py       # YAML 配置读写与点号路径修改
+├── core/wechat/               # 微信原始消息模型和 SQLite 增量存储
 └── usecases/configs/          # 分文件配置加载、保存、模板
 ```
 
@@ -30,7 +32,7 @@ src/stock_news/
 config.yaml              # 旧单文件配置，只作为读取兼容来源
 schedule.yaml            # 定时任务配置
 configs/models.yaml      # 模型供应商
-configs/wechat.yaml      # 微信数据源 API / 鉴权 / 拉取参数
+configs/wechat.yaml      # 微信数据源 API / 鉴权 / 拉取参数 / SQLite 路径
 configs/tushare.yaml     # Tushare 代理配置
 configs/channel.yaml     # 飞书 / 企业微信渠道配置
 ```
@@ -62,6 +64,15 @@ rtk .venv/bin/sn config set channel.providers.<name>.webhook_url <secret>
 ```
 
 不要在回答里打印 api key、token、webhook、app_secret。
+
+## 微信 SQLite 增量语义
+
+- 默认 DB 路径：`~/.config/stock-news/wechat.db`。
+- `wechat_messages.message_id` 是唯一键，重复运行不重复插入。
+- `wechat_fetch_windows` 用 `source + window_start + window_end` 记录窗口状态。
+- 成功且超过 `safety_margin_minutes` 的窗口跳过；失败窗口和最近窗口允许重拉。
+- 切片默认按 `slice_hours=1` 小时拆分，最后一片可以短于 1 小时。
+- 切片并发执行使用 `core/concurrency` 固定 worker 池，任意切片完成后立刻补入下一个待执行切片。
 
 ## 开发规则
 
