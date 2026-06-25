@@ -6,7 +6,9 @@ import json
 
 import click
 
-from stock_news.common.config import load, save, set_nested
+from stock_news.common.config import CONFIG_FILE, load, save, set_nested
+from stock_news.usecases.configs.paths import ConfigPaths
+from stock_news.usecases.configs.service import config_files
 
 
 def _masked(value: object) -> object:
@@ -37,14 +39,21 @@ def show(json_output: bool) -> None:
             )
         )
     else:
-        click.echo(f"API 地址: {cfg.api.base_url}")
-        click.echo(f"数据源: {', '.join(cfg.api.sources)}")
-        click.echo(f"超时: {cfg.api.timeout}s")
-        click.echo(f"数据目录: {cfg.storage.data_dir}")
-        click.echo(f"存储格式: {cfg.storage.format}")
-        click.echo(f"Tushare API: {cfg.market.tushare_api_url or '直连'}")
-        if cfg.delivery.providers:
-            click.echo(f"Delivery providers: {', '.join(cfg.delivery.providers)}")
+        files = config_files(ConfigPaths.from_legacy_file(CONFIG_FILE))
+        click.echo("配置文件:")
+        click.echo(f"  models: {files.model_providers}")
+        click.echo(f"  wechat: {files.wechat_source}")
+        click.echo(f"  tushare: {files.tushare}")
+        click.echo(f"  schedule: {files.schedule}")
+        click.echo(f"  channel: {files.channel}")
+        click.echo("")
+        click.echo(f"默认模型: {cfg.models.default_provider or '未配置'}")
+        click.echo(f"模型供应商: {', '.join(cfg.models.providers) or '未配置'}")
+        click.echo(f"微信 API: {cfg.wechat.base_url}")
+        click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
+        click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
+        click.echo(f"定时任务数: {len(cfg.schedule.jobs)}")
+        click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
 
 
 def set_value(key: str, value: str) -> None:

@@ -26,7 +26,7 @@ def show(ctx: click.Context) -> None:
 @click.argument("value")
 @click.pass_context
 def config_set(ctx: click.Context, key: str, value: str) -> None:
-    """设置配置项，如: sn config set api.timeout 60."""
+    """设置配置项，如: sn config set wechat.timeout 60."""
     from stock_news.commands.config_cmd import set_value
 
     set_value(key, value)
