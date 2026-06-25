@@ -281,9 +281,7 @@ def _send_summary(
         item_count=item_count,
     )
     sender = ChannelSender(config.channel)
-    results: list[ChannelSendResult] = []
-    for target in channel_targets:
-        results.append(sender.send_to_target(target, message))
+    results = sender.send_to_targets(channel_targets, message)
     for route in channel_routes:
         results.extend(sender.send_route(route, message))
     return results

@@ -51,4 +51,4 @@ def rich_text_to_feishu_post(content: RichTextContent) -> dict[str, object]:
             else:
                 blocks.append({"tag": "text", "text": item.text})
         paragraphs.append(blocks)
-    return {"post": {"zh_cn": {"title": content.title, "content": paragraphs}}}
+    return {"zh_cn": {"title": content.title, "content": paragraphs}}

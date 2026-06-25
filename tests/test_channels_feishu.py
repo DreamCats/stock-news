@@ -81,8 +81,9 @@ def test_feishu_sends_rich_text_post(monkeypatch: Any) -> None:
     assert calls[1]["payload"]["receive_id"] == "oc_xxx"
     assert calls[1]["payload"]["msg_type"] == "post"
     content = json.loads(str(calls[1]["payload"]["content"]))
-    assert content["post"]["zh_cn"]["title"] == "标题"
-    assert content["post"]["zh_cn"]["content"][0][1] == {
+    assert "post" not in content
+    assert content["zh_cn"]["title"] == "标题"
+    assert content["zh_cn"]["content"][0][1] == {
         "tag": "a",
         "text": "链接",
         "href": "https://example.com",

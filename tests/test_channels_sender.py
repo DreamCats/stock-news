@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from stock_news.core.channels import ChannelMessage, ChannelSender
+from stock_news.core.channels import ChannelMessage, ChannelSender, ChannelSendResult
 from stock_news.models import (
     ChannelConfig,
     DeliveryProviderConfig,
@@ -73,4 +73,32 @@ def test_channel_sender_sends_route_targets(monkeypatch: Any) -> None:
     assert payloads == [
         {"msgtype": "text", "text": {"content": "hello"}},
         {"msgtype": "text", "text": {"content": "hello"}},
+    ]
+
+
+def test_channel_sender_sends_targets_best_effort(monkeypatch: Any) -> None:
+    sent: list[str] = []
+
+    def fake_send_to_target(
+        _self: ChannelSender,
+        target_name: str,
+        _message: ChannelMessage,
+    ) -> ChannelSendResult:
+        sent.append(target_name)
+        if target_name == "bad":
+            raise RuntimeError("boom")
+        return ChannelSendResult(provider="fake", target=target_name, ok=True)
+
+    monkeypatch.setattr(ChannelSender, "send_to_target", fake_send_to_target)
+    sender = ChannelSender(ChannelConfig())
+
+    results = sender.send_to_targets(
+        ["bad", "good"],
+        ChannelMessage(text="hello"),
+    )
+
+    assert sent == ["bad", "good"]
+    assert [(item.target, item.ok, item.message) for item in results] == [
+        ("bad", False, "boom"),
+        ("good", True, ""),
     ]

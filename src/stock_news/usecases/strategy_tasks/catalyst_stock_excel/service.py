@@ -264,9 +264,7 @@ def _send_excel(
     message = ChannelMessage(
         file=ChannelFile(path=excel_path, file_name=excel_path.name)
     )
-    results: list[ChannelSendResult] = []
-    for target in channel_targets:
-        results.append(sender.send_to_target(target, message))
+    results = sender.send_to_targets(channel_targets, message)
     for route in channel_routes:
         results.extend(sender.send_route(route, message))
     return results

@@ -41,6 +41,28 @@ class ChannelSender:
             message=message,
         )
 
+    def send_to_targets(
+        self,
+        target_names: list[str],
+        message: ChannelMessage,
+    ) -> list[ChannelSendResult]:
+        """发送到多个 target，单个失败不阻断后续 target。"""
+
+        results: list[ChannelSendResult] = []
+        for target_name in target_names:
+            try:
+                results.append(self.send_to_target(target_name, message))
+            except Exception as exc:
+                results.append(
+                    ChannelSendResult(
+                        provider="",
+                        target=target_name,
+                        ok=False,
+                        message=str(exc),
+                    )
+                )
+        return results
+
     def send_route(
         self,
         route_name: str,

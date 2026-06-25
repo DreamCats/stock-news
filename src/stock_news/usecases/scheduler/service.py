@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Literal
 
+from stock_news.core.channels import ChannelSendResult
 from stock_news.core.scheduler import (
     ScheduledTaskState,
     ScheduleStateStore,
@@ -370,7 +371,7 @@ def _run_catalyst_stock_excel(config: AppConfig, now: datetime) -> str:
         )
         if fetch_summary.errors:
             raise RuntimeError(fetch_part.strip())
-    return (
+    message = (
         f"scanned={result.scanned_messages}"
         f" catalyst={result.catalyst_messages}"
         f" stock_messages={result.stock_messages}"
@@ -379,6 +380,9 @@ def _run_catalyst_stock_excel(config: AppConfig, now: datetime) -> str:
         f" file={result.excel_path}"
         f"{fetch_part}"
     )
+    if send_failure := _send_failure_message(result.send_results):
+        raise RuntimeError(f"{message} {send_failure}")
+    return message
 
 
 def _run_evening_top_logic(config: AppConfig, now: datetime) -> str:
@@ -415,7 +419,7 @@ def _run_evening_top_logic(config: AppConfig, now: datetime) -> str:
         if fetch_summary.errors:
             raise RuntimeError(fetch_part.strip())
     url = result.publish_result.url if result.publish_result is not None else ""
-    return (
+    message = (
         f"scanned={result.scanned_messages}"
         f" catalyst={result.catalyst_messages}"
         f" stock_messages={result.stock_messages}"
@@ -426,6 +430,9 @@ def _run_evening_top_logic(config: AppConfig, now: datetime) -> str:
         f" file={result.html_path}"
         f"{fetch_part}"
     )
+    if send_failure := _send_failure_message(result.send_results):
+        raise RuntimeError(f"{message} {send_failure}")
+    return message
 
 
 def _run_research_daily_brief(config: AppConfig, now: datetime) -> str:
@@ -457,7 +464,7 @@ def _run_research_daily_brief(config: AppConfig, now: datetime) -> str:
             f" failed={result.sync_summary.failed}"
         )
     url = result.publish_result.url if result.publish_result is not None else ""
-    return (
+    message = (
         f"documents={len(result.documents)}"
         f" items={len(result.summary.items)}"
         f" sent={len(result.send_results)}"
@@ -465,6 +472,9 @@ def _run_research_daily_brief(config: AppConfig, now: datetime) -> str:
         f" file={result.html_path}"
         f"{sync_part}"
     )
+    if send_failure := _send_failure_message(result.send_results):
+        raise RuntimeError(f"{message} {send_failure}")
+    return message
 
 
 def _within_active_window(now: datetime, *, start: time, end: time) -> bool:
@@ -479,6 +489,16 @@ def _same_day_window(now: datetime, *, start: time, end: time) -> TimeWindow:
         start=datetime.combine(now.date(), start, tzinfo=now.tzinfo),
         end=datetime.combine(now.date(), end, tzinfo=now.tzinfo),
     )
+
+
+def _send_failure_message(results: tuple[ChannelSendResult, ...]) -> str:
+    failed = [item for item in results if not item.ok]
+    if not failed:
+        return ""
+    details = "; ".join(f"{item.target}: {item.message}" for item in failed[:3])
+    if len(failed) > 3:
+        details = f"{details}; 还有 {len(failed) - 3} 个失败"
+    return f"send_failed={len(failed)} {details}"
 
 
 def _task_view(
