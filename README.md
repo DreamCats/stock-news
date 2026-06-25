@@ -193,18 +193,23 @@ sn config set storage.data_dir ~/my-data
 ### 定时调度 `sn schedule`
 
 ```bash
-sn schedule install                  # 安装 launchd，按 schedule.yaml 的 tick_interval tick
+sn schedule start                    # 后台启动项目级 scheduler
+sn schedule restart                  # 重启项目级 scheduler
+sn schedule stop                     # 停止后台 scheduler
+sn schedule status                   # 查看后台 pid / lock / 最近 tick
+sn schedule serve                    # 前台持续 tick，按 schedule.yaml 的 tick_interval 检查
 sn schedule list                     # 列出 job 和最近状态
 sn schedule tick                     # 手动执行一轮 due 检查
 sn schedule run fetch                # 手动强跑某个 job
 sn schedule logs --job fetch --tail 20
 sn schedule disable fetch            # 临时停用，不改 yaml
 sn schedule enable fetch
-sn schedule uninstall
 ```
 
 配置文件在 `~/.config/stock-news/schedule.yaml`。首次运行会生成空配置，
-默认不预置任何会打 API 的 job；需要手动填 `jobs` 后再安装或 tick。
+默认不预置任何会打 API 的 job；需要手动填 `jobs` 后再启动 `start` / `serve`
+或手动 `tick`。后台进程 pid 写入 `~/.config/stock-news/schedule/scheduler.pid`，
+stdout/stderr 写入 `~/.config/stock-news/schedule/logs/scheduler*.log`。
 
 持续运行的盘中任务建议把采集和分析拆开：采集每 20 分钟跑当天
 `09:00-23:00` 的窗口；分析继续使用 `--date today`，第二天会自动滚动。

@@ -5,13 +5,26 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from stock_news.cli import main
 from stock_news.commands import schedule_cmd
 from stock_news.common.scheduler.config import ScheduleFile, ScheduleJob
 from stock_news.common.scheduler.engine import is_due, tick
+from stock_news.common.scheduler.lock import FileLock
 from stock_news.common.scheduler.logging import append_jsonl
+from stock_news.common.scheduler.service import (
+    SchedulerAlreadyRunning,
+    is_scheduler_running,
+    run_scheduler_loop,
+    scheduler_lock_path,
+    scheduler_pid_path,
+    scheduler_status,
+    start_scheduler_process,
+    stop_scheduler_process,
+    write_scheduler_pid,
+)
 from stock_news.common.scheduler.state import JobState, read_state, write_state
 
 
@@ -127,7 +140,13 @@ def test_schedule_command_is_registered_without_alias() -> None:
     result = CliRunner().invoke(main, ["schedule", "--help"])
 
     assert result.exit_code == 0
+    assert "restart" in result.output
+    assert "serve" in result.output
+    assert "start" in result.output
+    assert "stop" in result.output
     assert "tick" in result.output
+    assert "install" not in result.output
+    assert "uninstall" not in result.output
 
     result = CliRunner().invoke(main, ["--help"])
     assert "schedule" in result.output
@@ -141,6 +160,96 @@ def test_schedule_tick_quiet_suppresses_stdout(monkeypatch, tmp_path: Path) -> N
 
     assert result.exit_code == 0
     assert result.output == ""
+
+
+def test_project_scheduler_running_status_uses_process_lock(tmp_path: Path) -> None:
+    schedule = _schedule(tmp_path, [])
+
+    assert is_scheduler_running(schedule) is False
+    with FileLock(scheduler_lock_path(schedule)):
+        assert is_scheduler_running(schedule) is True
+
+
+def test_project_scheduler_loop_ticks_until_stop(tmp_path: Path) -> None:
+    schedule = _schedule(tmp_path, [])
+    tick_count = 0
+
+    def on_tick(_summary: object) -> None:
+        nonlocal tick_count
+        tick_count += 1
+
+    run_scheduler_loop(
+        load_fn=lambda: schedule,
+        on_tick=on_tick,
+        should_stop=lambda: tick_count >= 1,
+        sleep_fn=lambda _seconds: None,
+    )
+
+    assert tick_count == 1
+    assert schedule.tick_log_path.exists()
+
+
+def test_project_scheduler_loop_rejects_duplicate_process(tmp_path: Path) -> None:
+    schedule = _schedule(tmp_path, [])
+
+    with FileLock(scheduler_lock_path(schedule)):
+        with pytest.raises(SchedulerAlreadyRunning):
+            run_scheduler_loop(
+                load_fn=lambda: schedule,
+                should_stop=lambda: True,
+                sleep_fn=lambda _seconds: None,
+            )
+
+
+def test_project_scheduler_start_stop_manages_background_process(
+    tmp_path: Path,
+) -> None:
+    schedule = _schedule(tmp_path, [])
+    lock_path = scheduler_lock_path(schedule)
+    fake_sn = tmp_path / "fake-sn"
+    script = (
+        "#!/bin/sh\n"
+        "exec "
+        f"{shlex.quote(sys.executable)}"
+        " -c "
+        + shlex.quote(
+            "import fcntl, time; "
+            f"f=open({str(lock_path)!r}, 'a+'); "
+            "fcntl.flock(f.fileno(), fcntl.LOCK_EX); "
+            "time.sleep(60)"
+        )
+        + "\n"
+    )
+    fake_sn.write_text(script, encoding="utf-8")
+    fake_sn.chmod(0o755)
+
+    status = start_scheduler_process(
+        schedule,
+        sn_executable=str(fake_sn),
+        startup_wait_seconds=2,
+    )
+
+    assert status.running is True
+    assert status.pid is not None
+    assert scheduler_pid_path(schedule).exists()
+
+    stopped = stop_scheduler_process(schedule, timeout_seconds=2)
+
+    assert stopped.running is False
+    assert not scheduler_pid_path(schedule).exists()
+
+
+def test_project_scheduler_stop_clears_stale_pid(tmp_path: Path) -> None:
+    schedule = _schedule(tmp_path, [])
+    write_scheduler_pid(schedule, 99999999)
+
+    status = scheduler_status(schedule)
+    assert status.stale_pid is True
+
+    stopped = stop_scheduler_process(schedule)
+
+    assert stopped.running is False
+    assert not scheduler_pid_path(schedule).exists()
 
 
 def test_schedule_log_rotates_when_size_limit_is_reached(tmp_path: Path) -> None:

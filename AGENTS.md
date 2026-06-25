@@ -28,7 +28,7 @@ sn source {extract|scan}                  # 源头雷达
 sn llm {add|list|set-default|test|chat|route}
 sn market {set-token|init|search|price|info}
 sn config {show|set}
-sn schedule {install|uninstall|list|enable|disable|run|tick|status|logs}
+sn schedule {start|restart|stop|serve|list|enable|disable|run|tick|status|logs}
 sn delivery {send|test|provider|route|target}
 ```
 
@@ -52,7 +52,7 @@ sn delivery {send|test|provider|route|target}
 编排与投递：
   sn workflow run    # fetch→classify→extract→backtest summary→strategy→可选 delivery
   sn delivery send   # 推送到 feishu_bot / wecom_bot（外发！）
-  sn schedule tick   # launchd 每 10min 触发，按 schedule.yaml 跑 due job
+  sn schedule serve  # 项目进程内持续 tick，按 schedule.yaml 跑 due job
 ```
 
 ## 3. Code Layout (`src/stock_news/`)
@@ -79,7 +79,7 @@ sn delivery {send|test|provider|route|target}
   - `llm/client.py` — OpenAI 兼容客户端，封装 **全局 RPM 限速器（90/min）**、**429 指数退避（2/4/8/16/32s, 共 5 次）**、`chat` / `chat_json` / `chat_json_list`。
   - `llm/prompts.py` — prompt 模板，可被 `~/.config/stock-news/prompts/` 覆盖。
   - `market/db.py`、`market/tushare_client.py` — Tushare + SQLite 缓存层。
-  - `scheduler/` — `config.py`（schedule.yaml 解析）/ `engine.py`（due 判定）/ `runner.py`（执行）/ `launchd.py`（plist）/ `lock.py` / `state.py`。
+  - `scheduler/` — `config.py`（schedule.yaml 解析）/ `engine.py`（due 判定）/ `runner.py`（执行）/ `service.py`（项目进程内循环）/ `lock.py` / `state.py`。
   - `delivery/` — `service.py`（路由分发）/ `feishu_bot.py` / `wecom_bot.py`。
 
 ## 4. Data Directories
@@ -165,6 +165,7 @@ uv run sn market init
 uv run sn market price <code> --start ... --end ...
 uv run sn llm test|chat ...
 uv run sn delivery send|test ...        # 外发飞书/企微
+uv run sn schedule start|restart|serve  # 会按 due job 持续触发，可能外发 delivery
 uv run sn schedule run|tick             # 会跑整条链路并可能触发 delivery
 ```
 
