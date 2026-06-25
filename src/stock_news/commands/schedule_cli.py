@@ -30,6 +30,7 @@ from stock_news.usecases.scheduler import (
 from stock_news.usecases.scheduler.service import (
     TASK_CATALYST_STOCK_EXCEL,
     TASK_EVENING_TOP_LOGIC,
+    TASK_RESEARCH_DAILY_BRIEF,
     TASK_TUSHARE_SYNC,
     TASK_WECHAT_FETCH,
     TaskId,
@@ -128,6 +129,8 @@ def restart(ctx: click.Context) -> None:
             "catalyst-excel",
             "evening-top",
             "top-logic",
+            "research",
+            "research-brief",
             "strategy",
             "all",
         ]
@@ -237,12 +240,15 @@ def _resolve_task_ids(task: str) -> list[TaskId]:
         "catalyst-excel": [TASK_CATALYST_STOCK_EXCEL],
         "evening-top": [TASK_EVENING_TOP_LOGIC],
         "top-logic": [TASK_EVENING_TOP_LOGIC],
+        "research": [TASK_RESEARCH_DAILY_BRIEF],
+        "research-brief": [TASK_RESEARCH_DAILY_BRIEF],
         "strategy": [TASK_CATALYST_STOCK_EXCEL, TASK_EVENING_TOP_LOGIC],
         "all": [
             TASK_WECHAT_FETCH,
             TASK_TUSHARE_SYNC,
             TASK_CATALYST_STOCK_EXCEL,
             TASK_EVENING_TOP_LOGIC,
+            TASK_RESEARCH_DAILY_BRIEF,
         ],
     }
     return task_map[task]

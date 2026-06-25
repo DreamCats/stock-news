@@ -20,6 +20,7 @@ from stock_news.usecases.configs.templates import (
     default_catalysts_config,
     default_channel_config,
     default_model_providers_config,
+    default_research_sources_config,
     default_schedule_config,
     default_tushare_config,
     default_wechat_source_config,
@@ -27,6 +28,7 @@ from stock_news.usecases.configs.templates import (
     render_catalysts_template,
     render_channel_template,
     render_model_providers_template,
+    render_research_sources_template,
     render_schedule_template,
     render_tushare_template,
     render_wechat_source_template,
@@ -45,6 +47,8 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     )
     cfg.wechat.base_url = "https://wechat.example.com/api"
     cfg.tushare.tushare_api_url = "https://tushare-proxy.example.com"
+    cfg.research_sources.db_path = "~/.config/stock-news/research-test.db"
+    cfg.research_sources.max_pages_per_run = 3
     cfg.aly.host = "39.106.190.32"
     cfg.aly.password = "aly-secret"
     cfg.aly.remote_dir = "/usr/share/caddy/stock-news"
@@ -64,6 +68,7 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert paths.model_providers_file.exists()
     assert paths.wechat_source_file.exists()
     assert paths.tushare_file.exists()
+    assert paths.research_sources_file.exists()
     assert paths.aly_file.exists()
     assert paths.schedule_file.exists()
     assert paths.channel_file.exists()
@@ -74,6 +79,8 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert loaded.models.providers["glm"].api_key == "model-secret"
     assert loaded.wechat.base_url == "https://wechat.example.com/api"
     assert loaded.tushare.tushare_api_url == "https://tushare-proxy.example.com"
+    assert loaded.research_sources.db_path == "~/.config/stock-news/research-test.db"
+    assert loaded.research_sources.max_pages_per_run == 3
     assert loaded.aly.host == "39.106.190.32"
     assert loaded.aly.password == "aly-secret"
     assert loaded.aly.remote_dir == "/usr/share/caddy/stock-news"
@@ -198,6 +205,30 @@ def test_tushare_template_matches_schema() -> None:
     assert loaded == cfg
 
 
+def test_research_sources_template_matches_schema() -> None:
+    cfg = default_research_sources_config()
+
+    assert cfg.enabled is True
+    assert cfg.db_path == "~/.config/stock-news/research_sources.db"
+    assert cfg.data_dir == "~/.config/stock-news/data/research_sources"
+    assert cfg.max_pages_per_run == 20
+    assert set(cfg.sources) == {
+        "goldman_sachs",
+        "citi",
+        "jpmorgan",
+        "jpmorgan_asset_management",
+        "morgan_stanley",
+    }
+    assert cfg.sources["goldman_sachs"].name == "高盛"
+    assert "artificial-intelligence" in cfg.sources["jpmorgan"].url_prefixes[0]
+    assert cfg.sources["jpmorgan_asset_management"].name == "摩根大通资管"
+
+    rendered = render_research_sources_template()
+    parsed = yaml.safe_load(rendered)
+    loaded = type(cfg).model_validate(parsed)
+    assert loaded == cfg
+
+
 def test_aly_template_matches_schema() -> None:
     cfg = default_aly_config()
 
@@ -243,6 +274,17 @@ def test_schedule_template_matches_schema() -> None:
     assert cfg.evening_top_logic.top_candidates == 50
     assert cfg.evening_top_logic.top_final == 32
     assert cfg.evening_top_logic.channel_targets == [
+        "dreamboys",
+        "wecom-push-2",
+    ]
+    assert cfg.research_daily_brief.enabled is True
+    assert cfg.research_daily_brief.at == "21:30"
+    assert cfg.research_daily_brief.provider == "mimo"
+    assert cfg.research_daily_brief.thinking_enabled is True
+    assert cfg.research_daily_brief.lookback_hours == 48
+    assert cfg.research_daily_brief.max_pages == 20
+    assert cfg.research_daily_brief.max_documents == 30
+    assert cfg.research_daily_brief.channel_targets == [
         "dreamboys",
         "wecom-push-2",
     ]

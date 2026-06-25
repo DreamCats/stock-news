@@ -14,6 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _DURATION_RE = re.compile(r"^(?P<num>\d+)(?P<unit>[smhd])$")
 _CLOCK_RE = re.compile(r"^\d{2}:\d{2}$")
+_DEFAULT_RESEARCH_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0 Safari/537.36 stock-news/0.1"
+)
 
 
 class WechatAuthConfig(BaseModel):
@@ -99,6 +104,126 @@ class TushareConfig(BaseModel):
     token: str = ""
     db_path: str = "~/.config/stock-news/market.db"
     timeout: int = 30
+
+
+class ResearchSourceProviderConfig(BaseModel):
+    """单个公开研究源抓取配置。"""
+
+    name: str
+    enabled: bool = True
+    sitemap_urls: list[str] = Field(default_factory=list)
+    url_prefixes: list[str] = Field(default_factory=list)
+    url_keywords: list[str] = Field(default_factory=list)
+    content_keywords: list[str] = Field(default_factory=list)
+    exclude_url_keywords: list[str] = Field(default_factory=list)
+    max_pages_per_run: int | None = None
+
+    @model_validator(mode="after")
+    def _validate_research_source(self) -> ResearchSourceProviderConfig:
+        if self.enabled and not self.sitemap_urls:
+            raise ValueError("研究源启用时必须配置 sitemap_urls")
+        if self.max_pages_per_run is not None and self.max_pages_per_run < 1:
+            raise ValueError("max_pages_per_run 必须大于等于 1")
+        return self
+
+
+class ResearchSourcesConfig(BaseModel):
+    """公开研究源抓取配置。"""
+
+    enabled: bool = True
+    db_path: str = "~/.config/stock-news/research_sources.db"
+    data_dir: str = "~/.config/stock-news/data/research_sources"
+    timeout: int = 20
+    user_agent: str = _DEFAULT_RESEARCH_USER_AGENT
+    max_pages_per_run: int = 20
+    sources: dict[str, ResearchSourceProviderConfig] = Field(
+        default_factory=lambda: {
+            "goldman_sachs": ResearchSourceProviderConfig(
+                name="高盛",
+                sitemap_urls=["https://www.goldmansachs.com/sitemap.xml"],
+                url_prefixes=[
+                    "https://www.goldmansachs.com/insights/articles/",
+                    "https://www.goldmansachs.com/insights/goldman-sachs-exchanges/",
+                    "https://www.goldmansachs.com/insights/top-of-mind/",
+                    "https://www.goldmansachs.com/briefings/",
+                    "https://www.goldmansachs.com/insights/artificial-intelligence",
+                ],
+                url_keywords=_default_ai_url_keywords(),
+                content_keywords=_default_ai_content_keywords(),
+                exclude_url_keywords=["/careers/", "/login"],
+            ),
+            "citi": ResearchSourceProviderConfig(
+                name="花旗",
+                sitemap_urls=["https://www.citigroup.com/global/sitemap.xml"],
+                url_prefixes=[
+                    "https://www.citigroup.com/global/insights/",
+                    "https://www.citigroup.com/global/news/press-release/",
+                    "https://www.citigroup.com/global/news/perspectives/",
+                ],
+                url_keywords=_default_ai_url_keywords()
+                + ["citi-gps", "gps", "supply-chain-financing"],
+                content_keywords=_default_ai_content_keywords() + ["Citi GPS"],
+                exclude_url_keywords=["/login", "/unsubscribe"],
+            ),
+            "jpmorgan": ResearchSourceProviderConfig(
+                name="摩根大通",
+                sitemap_urls=["https://www.jpmorgan.com/US/en/sitemap.xml"],
+                url_prefixes=[
+                    "https://www.jpmorgan.com/insights/global-research/artificial-intelligence",
+                    "https://www.jpmorgan.com/insights/technology/artificial-intelligence",
+                    "https://www.jpmorgan.com/payments/newsroom/",
+                    "https://www.jpmorgan.com/insights/podcast-hub/making-sense/",
+                ],
+                url_keywords=_default_ai_url_keywords(),
+                content_keywords=_default_ai_content_keywords(),
+                exclude_url_keywords=["/login", "/careers/"],
+            ),
+            "jpmorgan_asset_management": ResearchSourceProviderConfig(
+                name="摩根大通资管",
+                sitemap_urls=[
+                    "https://am.jpmorgan.com/us/en/asset-management/adv/sitemap.xml",
+                    "https://am.jpmorgan.com/sg/en/asset-management/per/sitemap.xml",
+                ],
+                url_prefixes=[
+                    "https://am.jpmorgan.com/us/en/asset-management/",
+                    "https://am.jpmorgan.com/sg/en/asset-management/",
+                    "https://am.jpmorgan.com/hk/en/asset-management/",
+                    "https://am.jpmorgan.com/content/dam/jpm-am-aem/",
+                ],
+                url_keywords=_default_ai_url_keywords()
+                + ["technology-and-ai", "global-ai", "ai-investment"],
+                content_keywords=_default_ai_content_keywords(),
+                exclude_url_keywords=[
+                    "/noindex/",
+                    "/login",
+                    "/termsofuse",
+                    "print.asp",
+                    "save.asp",
+                ],
+            ),
+            "morgan_stanley": ResearchSourceProviderConfig(
+                name="摩根士丹利",
+                sitemap_urls=["https://www.morganstanley.com/sitemap.xml"],
+                url_prefixes=[
+                    "https://www.morganstanley.com/insights/topics/artificial-intelligence",
+                    "https://www.morganstanley.com/insights/articles/",
+                    "https://www.morganstanley.com/insights/podcasts/thoughts-on-the-market/",
+                    "https://www.morganstanley.com/ideas/",
+                ],
+                url_keywords=_default_ai_url_keywords(),
+                content_keywords=_default_ai_content_keywords(),
+                exclude_url_keywords=["/auth/", "/careers/"],
+            ),
+        }
+    )
+
+    @model_validator(mode="after")
+    def _validate_research_sources(self) -> ResearchSourcesConfig:
+        if self.timeout < 1:
+            raise ValueError("timeout 必须大于等于 1")
+        if self.max_pages_per_run < 1:
+            raise ValueError("max_pages_per_run 必须大于等于 1")
+        return self
 
 
 class AlyConfig(BaseModel):
@@ -194,6 +319,39 @@ class ScheduleEveningTopLogicConfig(BaseModel):
         return self
 
 
+class ScheduleResearchDailyBriefConfig(BaseModel):
+    """公开研究源每日摘要定时任务配置。"""
+
+    enabled: bool = True
+    at: str = "21:30"
+    provider: str = "mimo"
+    thinking_enabled: bool = True
+    thinking_budget_tokens: int | None = None
+    lookback_hours: int = 48
+    max_pages: int = 20
+    max_documents: int = 30
+    max_chars_per_document: int = 3500
+    channel_targets: list[str] = Field(
+        default_factory=lambda: ["dreamboys", "wecom-push-2"]
+    )
+    channel_routes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_research_daily_brief(self) -> ScheduleResearchDailyBriefConfig:
+        _validate_clock(self.at)
+        if self.lookback_hours < 1:
+            raise ValueError("lookback_hours 必须大于等于 1")
+        if self.max_pages < 1:
+            raise ValueError("max_pages 必须大于等于 1")
+        if self.max_documents < 1:
+            raise ValueError("max_documents 必须大于等于 1")
+        if self.max_chars_per_document < 200:
+            raise ValueError("max_chars_per_document 必须大于等于 200")
+        if self.thinking_budget_tokens is not None and self.thinking_budget_tokens < 1:
+            raise ValueError("thinking_budget_tokens 必须大于等于 1")
+        return self
+
+
 class ScheduleConfig(BaseModel):
     """定时任务配置文件。"""
 
@@ -210,6 +368,9 @@ class ScheduleConfig(BaseModel):
     )
     evening_top_logic: ScheduleEveningTopLogicConfig = Field(
         default_factory=ScheduleEveningTopLogicConfig
+    )
+    research_daily_brief: ScheduleResearchDailyBriefConfig = Field(
+        default_factory=ScheduleResearchDailyBriefConfig
     )
 
     @model_validator(mode="after")
@@ -321,6 +482,9 @@ class AppConfig(BaseModel):
     models: LLMConfig = Field(default_factory=LLMConfig)
     wechat: WechatSourceConfig = Field(default_factory=WechatSourceConfig)
     tushare: TushareConfig = Field(default_factory=TushareConfig)
+    research_sources: ResearchSourcesConfig = Field(
+        default_factory=ResearchSourcesConfig
+    )
     aly: AlyConfig = Field(default_factory=AlyConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
@@ -370,3 +534,48 @@ def _normalize_terms(values: list[str]) -> list[str]:
         seen.add(cleaned)
         terms.append(cleaned)
     return terms
+
+
+def _default_ai_url_keywords() -> list[str]:
+    return [
+        "/ai-",
+        "-ai-",
+        "artificial-intelligence",
+        "artificial_intelligence",
+        "generative-ai",
+        "generative",
+        "genai",
+        "gen-ai",
+        "agentic",
+        "agents",
+        "robot",
+        "robots",
+        "data-center",
+        "data-centers",
+        "semiconductor",
+        "semiconductors",
+        "chip",
+        "chips",
+        "compute",
+        "hyperscaler",
+        "hyperscalers",
+        "power-demand",
+        "powering-ai",
+        "ai-revolution",
+        "ai-capex",
+    ]
+
+
+def _default_ai_content_keywords() -> list[str]:
+    return [
+        "AI",
+        "artificial intelligence",
+        "generative AI",
+        "GenAI",
+        "agentic AI",
+        "data center",
+        "semiconductor",
+        "hyperscaler",
+        "AI capex",
+        "AI infrastructure",
+    ]

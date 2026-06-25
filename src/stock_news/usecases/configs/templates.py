@@ -14,6 +14,7 @@ from stock_news.usecases.configs.models import (
     CatalystsConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
+    ResearchSourcesConfigFile,
     ScheduleConfigFile,
     TushareConfigFile,
     WechatSourceConfigFile,
@@ -93,6 +94,19 @@ def render_tushare_template() -> str:
     """把 Tushare 模板渲染成 tushare.yaml 内容。"""
 
     data = default_tushare_config().model_dump(mode="json")
+    return _dump_yaml(data)
+
+
+def default_research_sources_config() -> ResearchSourcesConfigFile:
+    """生成公开研究源抓取配置模板。"""
+
+    return ResearchSourcesConfigFile()
+
+
+def render_research_sources_template() -> str:
+    """把公开研究源模板渲染成 research_sources.yaml 内容。"""
+
+    data = default_research_sources_config().model_dump(mode="json")
     return _dump_yaml(data)
 
 

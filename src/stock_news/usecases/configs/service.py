@@ -1,7 +1,7 @@
 """分文件配置加载和保存用例。
 
 本用例把旧的单文件配置迁移为按业务域拆分的 YAML：
-模型、微信数据源、Tushare、阿里云、定时任务、渠道和催化词。
+模型、微信数据源、Tushare、公开研究源、阿里云、定时任务、渠道和催化词。
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from stock_news.usecases.configs.models import (
     CatalystsConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
+    ResearchSourcesConfigFile,
     ScheduleConfigFile,
     TushareConfigFile,
     WechatSourceConfigFile,
@@ -33,6 +34,7 @@ class SplitConfigFiles:
     model_providers: Path
     wechat_source: Path
     tushare: Path
+    research_sources: Path
     aly: Path
     schedule: Path
     channel: Path
@@ -46,6 +48,7 @@ def config_files(paths: ConfigPaths) -> SplitConfigFiles:
         model_providers=paths.model_providers_file,
         wechat_source=paths.wechat_source_file,
         tushare=paths.tushare_file,
+        research_sources=paths.research_sources_file,
         aly=paths.aly_file,
         schedule=paths.schedule_file,
         channel=paths.channel_file,
@@ -70,6 +73,10 @@ def load_app_config(paths: ConfigPaths) -> AppConfig:
         cfg.tushare = _store(paths.tushare_file, TushareConfigFile).load(
             TushareConfigFile
         )
+    if paths.research_sources_file.exists():
+        cfg.research_sources = _store(
+            paths.research_sources_file, ResearchSourcesConfigFile
+        ).load(ResearchSourcesConfigFile)
     if paths.aly_file.exists():
         cfg.aly = _store(paths.aly_file, AlyConfigFile).load(AlyConfigFile)
     if paths.schedule_file.exists():
@@ -88,7 +95,7 @@ def load_app_config(paths: ConfigPaths) -> AppConfig:
 
 
 def save_app_config(paths: ConfigPaths, cfg: AppConfig) -> None:
-    """保存 AppConfig，把五个配置域写入各自文件。"""
+    """保存 AppConfig，把各配置域写入各自文件。"""
 
     paths.split_dir.mkdir(parents=True, exist_ok=True)
     _store(paths.model_providers_file, ModelProvidersConfigFile).save(
@@ -101,6 +108,12 @@ def save_app_config(paths: ConfigPaths, cfg: AppConfig) -> None:
     )
     _store(paths.tushare_file, TushareConfigFile).save(
         TushareConfigFile.model_validate(cfg.tushare.model_dump(mode="json")),
+        mode=0o600,
+    )
+    _store(paths.research_sources_file, ResearchSourcesConfigFile).save(
+        ResearchSourcesConfigFile.model_validate(
+            cfg.research_sources.model_dump(mode="json")
+        ),
         mode=0o600,
     )
     _store(paths.aly_file, AlyConfigFile).save(

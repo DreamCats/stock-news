@@ -21,6 +21,7 @@ from stock_news.core.scheduler import (
 from stock_news.core.wechat import TimeWindow
 from stock_news.models import AppConfig
 from stock_news.usecases.market_sync import sync_stock_companies
+from stock_news.usecases.research import run_research_daily_brief_task
 from stock_news.usecases.strategy_tasks import (
     run_catalyst_excel_task,
     run_evening_top_logic_task,
@@ -32,11 +33,13 @@ TaskId = Literal[
     "tushare_sync",
     "catalyst_stock_excel",
     "evening_top_logic",
+    "research_daily_brief",
 ]
 TASK_WECHAT_FETCH: TaskId = "wechat_fetch"
 TASK_TUSHARE_SYNC: TaskId = "tushare_sync"
 TASK_CATALYST_STOCK_EXCEL: TaskId = "catalyst_stock_excel"
 TASK_EVENING_TOP_LOGIC: TaskId = "evening_top_logic"
+TASK_RESEARCH_DAILY_BRIEF: TaskId = "research_daily_brief"
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class SchedulerActions:
     tushare_sync: Callable[[AppConfig, datetime], str]
     catalyst_stock_excel: Callable[[AppConfig, datetime], str]
     evening_top_logic: Callable[[AppConfig, datetime], str]
+    research_daily_brief: Callable[[AppConfig, datetime], str]
 
 
 DEFAULT_ACTIONS = SchedulerActions(
@@ -79,6 +83,7 @@ DEFAULT_ACTIONS = SchedulerActions(
     tushare_sync=lambda cfg, now: _run_tushare_sync(cfg, now),
     catalyst_stock_excel=lambda cfg, now: _run_catalyst_stock_excel(cfg, now),
     evening_top_logic=lambda cfg, now: _run_evening_top_logic(cfg, now),
+    research_daily_brief=lambda cfg, now: _run_research_daily_brief(cfg, now),
 )
 
 
@@ -139,6 +144,15 @@ def due_task_ids(
         last_started_at=evening_state.last_started_at,
     ):
         due.append(TASK_EVENING_TOP_LOGIC)
+
+    research_state = store.get(TASK_RESEARCH_DAILY_BRIEF)
+    research_config = config.schedule.research_daily_brief
+    if research_config.enabled and is_daily_due(
+        now=now,
+        at=parse_clock(research_config.at),
+        last_started_at=research_state.last_started_at,
+    ):
+        due.append(TASK_RESEARCH_DAILY_BRIEF)
 
     return due
 
@@ -266,6 +280,22 @@ def build_schedule_status(
             due=TASK_EVENING_TOP_LOGIC in due,
             state=states.get(TASK_EVENING_TOP_LOGIC, ScheduledTaskState()),
         ),
+        _task_view(
+            task_id=TASK_RESEARCH_DAILY_BRIEF,
+            enabled=config.schedule.enabled
+            and config.schedule.research_daily_brief.enabled,
+            trigger=(
+                f"at={config.schedule.research_daily_brief.at} "
+                f"provider={config.schedule.research_daily_brief.provider} "
+                f"lookback={config.schedule.research_daily_brief.lookback_hours}h "
+                f"max_pages={config.schedule.research_daily_brief.max_pages} "
+                f"max_docs={config.schedule.research_daily_brief.max_documents} "
+                "targets="
+                f"{','.join(config.schedule.research_daily_brief.channel_targets)}"
+            ),
+            due=TASK_RESEARCH_DAILY_BRIEF in due,
+            state=states.get(TASK_RESEARCH_DAILY_BRIEF, ScheduledTaskState()),
+        ),
     ]
 
 
@@ -283,6 +313,8 @@ def _run_action(
         return actions.catalyst_stock_excel(config, now)
     if task_id == TASK_EVENING_TOP_LOGIC:
         return actions.evening_top_logic(config, now)
+    if task_id == TASK_RESEARCH_DAILY_BRIEF:
+        return actions.research_daily_brief(config, now)
     raise ValueError(f"未知定时任务: {task_id}")
 
 
@@ -393,6 +425,45 @@ def _run_evening_top_logic(config: AppConfig, now: datetime) -> str:
         f" url={url}"
         f" file={result.html_path}"
         f"{fetch_part}"
+    )
+
+
+def _run_research_daily_brief(config: AppConfig, now: datetime) -> str:
+    schedule = config.schedule.research_daily_brief
+    result = run_research_daily_brief_task(
+        config=config,
+        now=now,
+        fetch=True,
+        publish=True,
+        send=True,
+        max_pages=schedule.max_pages,
+        lookback_hours=schedule.lookback_hours,
+        max_documents=schedule.max_documents,
+        max_chars_per_document=schedule.max_chars_per_document,
+        provider=schedule.provider,
+        thinking_enabled=schedule.thinking_enabled,
+        thinking_budget_tokens=schedule.thinking_budget_tokens,
+        channel_targets=schedule.channel_targets,
+        channel_routes=schedule.channel_routes,
+    )
+    sync_part = ""
+    if result.sync_summary is not None:
+        sync_part = (
+            f" candidates={result.sync_summary.candidates}"
+            f" fetched={result.sync_summary.fetched}"
+            f" inserted={result.sync_summary.inserted}"
+            f" updated={result.sync_summary.updated}"
+            f" skipped={result.sync_summary.skipped}"
+            f" failed={result.sync_summary.failed}"
+        )
+    url = result.publish_result.url if result.publish_result is not None else ""
+    return (
+        f"documents={len(result.documents)}"
+        f" items={len(result.summary.items)}"
+        f" sent={len(result.send_results)}"
+        f" url={url}"
+        f" file={result.html_path}"
+        f"{sync_part}"
     )
 
 

@@ -11,6 +11,7 @@ from stock_news.models import (
     CatalystConfig,
     ChannelConfig,
     LLMConfig,
+    ResearchSourcesConfig,
     ScheduleConfig,
     TushareConfig,
     WechatSourceConfig,
@@ -27,6 +28,10 @@ class WechatSourceConfigFile(WechatSourceConfig):
 
 class TushareConfigFile(TushareConfig):
     """tushare.yaml：Tushare 代理 API 和访问参数。"""
+
+
+class ResearchSourcesConfigFile(ResearchSourcesConfig):
+    """research_sources.yaml：公开研究源 sitemap、关键词和本地存储配置。"""
 
 
 class AlyConfigFile(AlyConfig):

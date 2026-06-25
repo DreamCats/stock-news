@@ -44,6 +44,7 @@ def show(json_output: bool) -> None:
         click.echo(f"  models: {files.model_providers}")
         click.echo(f"  wechat: {files.wechat_source}")
         click.echo(f"  tushare: {files.tushare}")
+        click.echo(f"  research_sources: {files.research_sources}")
         click.echo(f"  aly: {files.aly}")
         click.echo(f"  schedule: {files.schedule}")
         click.echo(f"  channel: {files.channel}")
@@ -56,6 +57,11 @@ def show(json_output: bool) -> None:
         click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
         click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
         click.echo(f"Market DB: {cfg.tushare.db_path}")
+        enabled_research_sources = [
+            item.name for item in cfg.research_sources.sources.values() if item.enabled
+        ]
+        click.echo(f"研究源 DB: {cfg.research_sources.db_path}")
+        click.echo(f"研究源: {', '.join(enabled_research_sources) or '未配置'}")
         click.echo(f"阿里云: {cfg.aly.user}@{cfg.aly.host}:{cfg.aly.port}")
         click.echo(f"阿里云目录: {cfg.aly.remote_dir or '未配置'}")
         click.echo(f"阿里云 URL: {cfg.aly.url_prefix or '未配置'}")
@@ -90,6 +96,16 @@ def show(json_output: bool) -> None:
             f"top={cfg.schedule.evening_top_logic.top_candidates}->"
             f"{cfg.schedule.evening_top_logic.top_final} "
             f"targets={', '.join(cfg.schedule.evening_top_logic.channel_targets)}"
+        )
+        click.echo(
+            "公开研究源摘要定时: "
+            f"{'启用' if cfg.schedule.research_daily_brief.enabled else '停用'} "
+            f"at={cfg.schedule.research_daily_brief.at} "
+            f"provider={cfg.schedule.research_daily_brief.provider} "
+            f"lookback={cfg.schedule.research_daily_brief.lookback_hours}h "
+            f"max_pages={cfg.schedule.research_daily_brief.max_pages} "
+            f"max_docs={cfg.schedule.research_daily_brief.max_documents} "
+            f"targets={', '.join(cfg.schedule.research_daily_brief.channel_targets)}"
         )
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
         custom_count = len(

@@ -10,6 +10,7 @@ from stock_news.models import AppConfig
 from stock_news.usecases.scheduler.service import (
     TASK_CATALYST_STOCK_EXCEL,
     TASK_EVENING_TOP_LOGIC,
+    TASK_RESEARCH_DAILY_BRIEF,
     TASK_TUSHARE_SYNC,
     TASK_WECHAT_FETCH,
     SchedulerActions,
@@ -68,6 +69,7 @@ def test_catalyst_excel_due_respects_active_window(tmp_path: Path) -> None:
     cfg.schedule.wechat_fetch.enabled = False
     cfg.schedule.tushare_sync.enabled = False
     cfg.schedule.evening_top_logic.enabled = False
+    cfg.schedule.research_daily_brief.enabled = False
     store = ScheduleStateStore(tmp_path / "schedule_state.json")
 
     assert (
@@ -102,6 +104,7 @@ def test_run_due_tasks_records_success_without_real_network(tmp_path: Path) -> N
         tushare_sync=lambda _cfg, _now: "market ok",
         catalyst_stock_excel=lambda _cfg, _now: "excel ok",
         evening_top_logic=lambda _cfg, _now: "top ok",
+        research_daily_brief=lambda _cfg, _now: "research ok",
     )
 
     runs = run_due_tasks(cfg, store, now=now, actions=actions)
@@ -118,11 +121,13 @@ def test_run_due_tasks_records_success_without_real_network(tmp_path: Path) -> N
         "success",
         "success",
         None,
+        None,
     ]
     assert [item.last_message for item in status] == [
         "wechat ok",
         "market ok",
         "excel ok",
+        "",
         "",
     ]
 
@@ -136,6 +141,7 @@ def test_run_scheduled_task_records_failure(tmp_path: Path) -> None:
         tushare_sync=lambda _cfg, _now: "market ok",
         catalyst_stock_excel=lambda _cfg, _now: "excel ok",
         evening_top_logic=lambda _cfg, _now: "top ok",
+        research_daily_brief=lambda _cfg, _now: "research ok",
     )
 
     run = run_scheduled_task(
@@ -158,6 +164,7 @@ def test_evening_top_logic_due_at_nine_pm(tmp_path: Path) -> None:
     cfg.schedule.wechat_fetch.enabled = False
     cfg.schedule.tushare_sync.enabled = False
     cfg.schedule.catalyst_stock_excel.enabled = False
+    cfg.schedule.research_daily_brief.enabled = False
     store = ScheduleStateStore(tmp_path / "schedule_state.json")
 
     assert (
@@ -178,6 +185,45 @@ def test_evening_top_logic_due_at_nine_pm(tmp_path: Path) -> None:
         TASK_EVENING_TOP_LOGIC,
         started_at=datetime(2026, 6, 25, 21, 0, tzinfo=timezone.utc),
         finished_at=datetime(2026, 6, 25, 21, 1, tzinfo=timezone.utc),
+        status="success",
+        message="ok",
+    )
+    assert (
+        due_task_ids(
+            cfg,
+            store,
+            now=datetime(2026, 6, 25, 22, 0, tzinfo=timezone.utc),
+        )
+        == []
+    )
+
+
+def test_research_daily_brief_due_at_nine_thirty_pm(tmp_path: Path) -> None:
+    cfg = AppConfig()
+    cfg.schedule.wechat_fetch.enabled = False
+    cfg.schedule.tushare_sync.enabled = False
+    cfg.schedule.catalyst_stock_excel.enabled = False
+    cfg.schedule.evening_top_logic.enabled = False
+    store = ScheduleStateStore(tmp_path / "schedule_state.json")
+
+    assert (
+        due_task_ids(
+            cfg,
+            store,
+            now=datetime(2026, 6, 25, 21, 29, tzinfo=timezone.utc),
+        )
+        == []
+    )
+    assert due_task_ids(
+        cfg,
+        store,
+        now=datetime(2026, 6, 25, 21, 30, tzinfo=timezone.utc),
+    ) == [TASK_RESEARCH_DAILY_BRIEF]
+
+    store.mark_finished(
+        TASK_RESEARCH_DAILY_BRIEF,
+        started_at=datetime(2026, 6, 25, 21, 30, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 6, 25, 21, 31, tzinfo=timezone.utc),
         status="success",
         message="ok",
     )
