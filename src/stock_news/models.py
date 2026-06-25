@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _DURATION_RE = re.compile(r"^(?P<num>\d+)(?P<unit>[smhd])$")
 _CLOCK_RE = re.compile(r"^\d{2}:\d{2}$")
@@ -215,6 +215,43 @@ class ChannelConfig(BaseModel):
     routes: dict[str, DeliveryRouteConfig] = Field(default_factory=dict)
 
 
+class CatalystCategoryOverrideConfig(BaseModel):
+    """内置催化词分类的用户覆盖配置。"""
+
+    enabled: bool = True
+    extra_terms: list[str] = Field(default_factory=list)
+    disabled_terms: list[str] = Field(default_factory=list)
+
+    @field_validator("extra_terms", "disabled_terms")
+    @classmethod
+    def _normalize_terms(cls, value: list[str]) -> list[str]:
+        return _normalize_terms(value)
+
+
+class CatalystCustomCategoryConfig(BaseModel):
+    """用户自定义催化词分类。"""
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=40)
+    color: str = Field(default="#5e6ad2", min_length=1, max_length=32)
+    enabled: bool = True
+    terms: list[str] = Field(default_factory=list)
+
+    @field_validator("terms")
+    @classmethod
+    def _normalize_terms(cls, value: list[str]) -> list[str]:
+        return _normalize_terms(value)
+
+
+class CatalystConfig(BaseModel):
+    """催化词配置，支持内置词库加用户增量覆盖。"""
+
+    version: int = 1
+    builtin_enabled: bool = True
+    categories: dict[str, CatalystCategoryOverrideConfig] = Field(default_factory=dict)
+    custom_categories: list[CatalystCustomCategoryConfig] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     """聚合后的应用配置，兼容旧字段名并映射到新分层。"""
 
@@ -226,6 +263,7 @@ class AppConfig(BaseModel):
     aly: AlyConfig = Field(default_factory=AlyConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
+    catalysts: CatalystConfig = Field(default_factory=CatalystConfig)
 
     @model_validator(mode="before")
     @classmethod
@@ -259,3 +297,15 @@ def _validate_clock(value: str) -> None:
     if not _CLOCK_RE.match(value.strip()):
         raise ValueError(f"非法时间格式，期望 HH:MM: {value}")
     datetime.strptime(value, "%H:%M")
+
+
+def _normalize_terms(values: list[str]) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = str(value).strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        terms.append(cleaned)
+    return terms

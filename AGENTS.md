@@ -27,6 +27,7 @@ src/stock_news/
 ├── core/llm/                  # OpenAI / Anthropic 协议客户端和 provider 选择
 ├── core/market/               # 股票公司和代码的 market.db 存储
 ├── core/scheduler/            # 定时判断和状态 JSON 存储
+├── core/source_messages/       # 源头消息归一化、去重和催化词匹配
 ├── core/tushare/              # Tushare 代理协议客户端
 ├── core/wechat/               # 微信原始消息模型和 SQLite 增量存储
 ├── usecases/configs/          # 分文件配置加载、保存、模板
@@ -50,6 +51,7 @@ configs/tushare.yaml     # Tushare 代理 / token / market.db 配置
 configs/aly.yaml         # 阿里云主机 / 远端目录 / URL 前缀
 configs/schedule.yaml    # 项目内定时任务配置
 configs/channel.yaml     # 飞书 / 企业微信渠道配置
+configs/catalysts.yaml   # 催化词内置开关、增量词和自定义分类
 ```
 
 `sn config set` 写入拆分后的配置文件，不再回写旧 `config.yaml`。旧根字段会映射到新名字：
@@ -116,6 +118,12 @@ rtk .venv/bin/sn schedule serve               # 前台常驻，主要用于调�
 - 状态写入 `~/.config/stock-news/schedule_state.json`，只记录最近一次执行状态。
 - 后台进程文件是 `~/.config/stock-news/schedule.pid`，日志是 `~/.config/stock-news/schedule.log`。
 - 进程重启后按当前时间继续判断，不补跑所有错过窗口。
+
+## 源头消息和催化词
+
+- `core/source_messages` 是可复用底座，只做文本归一化、去重 key、催化词库合并和匹配。
+- 催化词默认用内置词库，`configs/catalysts.yaml` 只表达禁用、追加和自定义分类。
+- core matcher 不读 DB、不强制“有标的才保留”；是否过滤无标的消息由具体 usecase 决定。
 
 ## 开发规则
 

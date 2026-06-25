@@ -1,7 +1,7 @@
 """分文件配置加载和保存用例。
 
-本用例把旧的单文件配置迁移为五个独立 YAML：
-模型、微信数据源、Tushare、定时任务和渠道。
+本用例把旧的单文件配置迁移为按业务域拆分的 YAML：
+模型、微信数据源、Tushare、阿里云、定时任务、渠道和催化词。
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from stock_news.core.config.store import YAMLConfigStore
 from stock_news.models import AppConfig
 from stock_news.usecases.configs.models import (
     AlyConfigFile,
+    CatalystsConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
     ScheduleConfigFile,
@@ -35,6 +36,7 @@ class SplitConfigFiles:
     aly: Path
     schedule: Path
     channel: Path
+    catalysts: Path
 
 
 def config_files(paths: ConfigPaths) -> SplitConfigFiles:
@@ -47,6 +49,7 @@ def config_files(paths: ConfigPaths) -> SplitConfigFiles:
         aly=paths.aly_file,
         schedule=paths.schedule_file,
         channel=paths.channel_file,
+        catalysts=paths.catalysts_file,
     )
 
 
@@ -77,6 +80,10 @@ def load_app_config(paths: ConfigPaths) -> AppConfig:
         cfg.channel = _store(paths.channel_file, ChannelConfigFile).load(
             ChannelConfigFile
         )
+    if paths.catalysts_file.exists():
+        cfg.catalysts = _store(paths.catalysts_file, CatalystsConfigFile).load(
+            CatalystsConfigFile
+        )
     return cfg
 
 
@@ -106,6 +113,10 @@ def save_app_config(paths: ConfigPaths, cfg: AppConfig) -> None:
     )
     _store(paths.channel_file, ChannelConfigFile).save(
         ChannelConfigFile.model_validate(cfg.channel.model_dump(mode="json")),
+        mode=0o600,
+    )
+    _store(paths.catalysts_file, CatalystsConfigFile).save(
+        CatalystsConfigFile.model_validate(cfg.catalysts.model_dump(mode="json")),
         mode=0o600,
     )
 

@@ -47,6 +47,7 @@ def show(json_output: bool) -> None:
         click.echo(f"  aly: {files.aly}")
         click.echo(f"  schedule: {files.schedule}")
         click.echo(f"  channel: {files.channel}")
+        click.echo(f"  catalysts: {files.catalysts}")
         click.echo("")
         click.echo(f"默认模型: {cfg.models.default_provider or '未配置'}")
         click.echo(f"模型供应商: {', '.join(cfg.models.providers) or '未配置'}")
@@ -71,6 +72,19 @@ def show(json_output: bool) -> None:
             f"at={cfg.schedule.tushare_sync.at}"
         )
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
+        custom_count = len(
+            [
+                category
+                for category in cfg.catalysts.custom_categories
+                if category.enabled
+            ]
+        )
+        click.echo(
+            "催化词: "
+            f"内置={'启用' if cfg.catalysts.builtin_enabled else '停用'} "
+            f"覆盖分类={len(cfg.catalysts.categories)} "
+            f"自定义分类={custom_count}"
+        )
 
 
 def set_value(key: str, value: str) -> None:

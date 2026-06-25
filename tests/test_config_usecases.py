@@ -9,6 +9,7 @@ import yaml
 from stock_news.core.config import set_nested
 from stock_news.models import (
     AppConfig,
+    CatalystCategoryOverrideConfig,
     DeliveryProviderConfig,
     LLMProviderConfig,
 )
@@ -16,12 +17,14 @@ from stock_news.usecases.configs.paths import ConfigPaths
 from stock_news.usecases.configs.service import load_app_config, save_app_config
 from stock_news.usecases.configs.templates import (
     default_aly_config,
+    default_catalysts_config,
     default_channel_config,
     default_model_providers_config,
     default_schedule_config,
     default_tushare_config,
     default_wechat_source_config,
     render_aly_template,
+    render_catalysts_template,
     render_channel_template,
     render_model_providers_template,
     render_schedule_template,
@@ -52,6 +55,9 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
         app_id="cli_xxx",
         app_secret="feishu-secret",
     )
+    cfg.catalysts.categories["price_supply"] = CatalystCategoryOverrideConfig(
+        extra_terms=["抢货"]
+    )
 
     save_app_config(paths, cfg)
 
@@ -61,6 +67,7 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert paths.aly_file.exists()
     assert paths.schedule_file.exists()
     assert paths.channel_file.exists()
+    assert paths.catalysts_file.exists()
     assert not paths.legacy_file.exists()
 
     loaded = load_app_config(paths)
@@ -73,6 +80,7 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert loaded.schedule.wechat_fetch.every == "15m"
     assert loaded.schedule.wechat_fetch.window == "15m"
     assert loaded.channel.providers["feishu-main"].app_secret == "feishu-secret"
+    assert loaded.catalysts.categories["price_supply"].extra_terms == ["抢货"]
 
 
 def test_split_config_overrides_legacy_sections(tmp_path: Path) -> None:
@@ -238,6 +246,21 @@ def test_channel_template_matches_schema() -> None:
     assert cfg.routes["default"].format == "markdown"
 
     rendered = render_channel_template()
+    parsed = yaml.safe_load(rendered)
+    loaded = type(cfg).model_validate(parsed)
+    assert loaded == cfg
+
+
+def test_catalysts_template_matches_schema() -> None:
+    cfg = default_catalysts_config()
+
+    assert cfg.builtin_enabled is True
+    assert "price_supply" in cfg.categories
+    assert cfg.categories["price_supply"].enabled is True
+    assert cfg.categories["price_supply"].extra_terms == []
+    assert cfg.custom_categories == []
+
+    rendered = render_catalysts_template()
     parsed = yaml.safe_load(rendered)
     loaded = type(cfg).model_validate(parsed)
     assert loaded == cfg

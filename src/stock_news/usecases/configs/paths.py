@@ -46,6 +46,10 @@ class ConfigPaths:
         return self.split_dir / "channel.yaml"
 
     @property
+    def catalysts_file(self) -> Path:
+        return self.split_dir / "catalysts.yaml"
+
+    @property
     def schedule_file(self) -> Path:
         return self.split_dir / "schedule.yaml"
 

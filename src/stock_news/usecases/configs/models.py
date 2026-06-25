@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from stock_news.models import (
     AlyConfig,
+    CatalystConfig,
     ChannelConfig,
     LLMConfig,
     ScheduleConfig,
@@ -38,3 +39,7 @@ class ScheduleConfigFile(ScheduleConfig):
 
 class ChannelConfigFile(ChannelConfig):
     """channel.yaml：飞书和企微 provider、target、route。"""
+
+
+class CatalystsConfigFile(CatalystConfig):
+    """catalysts.yaml：内置催化词开关、增量词和自定义分类。"""

@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import yaml
 
-from stock_news.models import LLMProviderConfig
+from stock_news.core.source_messages import builtin_catalyst_library
+from stock_news.models import CatalystCategoryOverrideConfig, LLMProviderConfig
 from stock_news.usecases.configs.models import (
     AlyConfigFile,
+    CatalystsConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
     ScheduleConfigFile,
@@ -177,6 +179,28 @@ def render_channel_template() -> str:
         exclude_defaults=True,
         exclude_none=True,
     )
+    return _dump_yaml(data)
+
+
+def default_catalysts_config() -> CatalystsConfigFile:
+    """生成催化词配置模板，默认启用内置分类但不追加用户词。"""
+
+    builtin = builtin_catalyst_library()
+    return CatalystsConfigFile(
+        version=builtin.version,
+        builtin_enabled=True,
+        categories={
+            category.id: CatalystCategoryOverrideConfig()
+            for category in builtin.categories
+        },
+        custom_categories=[],
+    )
+
+
+def render_catalysts_template() -> str:
+    """把催化词配置模板渲染成 catalysts.yaml 内容。"""
+
+    data = default_catalysts_config().model_dump(mode="json")
     return _dump_yaml(data)
 
 

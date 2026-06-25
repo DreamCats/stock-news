@@ -61,7 +61,8 @@ sn config set delivery.routes.default.format markdown
     ├── tushare.yaml         # Tushare 代理配置、本地 token、market.db 路径
     ├── aly.yaml             # 阿里云主机、远端目录和 URL 前缀
     ├── schedule.yaml        # 项目内定时任务配置
-    └── channel.yaml         # 飞书 bot / 企业微信渠道配置
+    ├── channel.yaml         # 飞书 bot / 企业微信渠道配置
+    └── catalysts.yaml       # 催化词内置开关、增量词和自定义分类
 ```
 
 `sn config set` 会写入拆分后的配置文件，不再回写旧 `config.yaml`。
@@ -84,6 +85,10 @@ Tushare 代理不会保存 token；`sn tushare sync-stocks` 会把本地
 
 `core/channels` 提供后续 usecase 可复用的渠道发送能力：统一 `ChannelSender`
 入口，底层支持飞书应用和企业微信群机器人，消息模型支持文本、富文本和文件。
+
+`core/source_messages` 提供后续 usecase 可复用的源头消息处理能力：当前包含
+催化词库合并、催化词匹配、微信装饰文本归一化和内容去重 key。催化词配置采用
+内置词库 + `configs/catalysts.yaml` 用户增量覆盖的方式。
 
 项目内定时任务不依赖系统 cron。日常用 `sn schedule start` 后台启动；
 `sn schedule serve` 保留为前台调试入口。后台进程仍然只是项目自己的
