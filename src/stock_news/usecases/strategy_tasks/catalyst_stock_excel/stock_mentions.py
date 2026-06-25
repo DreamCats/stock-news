@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from re import Pattern
 
 from stock_news.core.market import StockCompany
 
@@ -30,8 +31,12 @@ class StockMentionDetector:
     """基于本地股票公司列表的标的识别器。"""
 
     def __init__(self, companies: list[StockCompany]) -> None:
-        self.companies = [
-            company
+        self.matchers = [
+            _CompanyMatcher(
+                company=company,
+                ts_code_pattern=_code_pattern(company.ts_code),
+                symbol_pattern=_code_pattern(company.symbol),
+            )
             for company in companies
             if company.ts_code and company.symbol and company.name
         ]
@@ -41,10 +46,11 @@ class StockMentionDetector:
 
         mentions: list[StockMention] = []
         seen: set[str] = set()
-        for company in self.companies:
+        for matcher in self.matchers:
+            company = matcher.company
             if company.ts_code in seen:
                 continue
-            if not _matches_company(content, company):
+            if not _matches_company(content, matcher):
                 continue
             seen.add(company.ts_code)
             mentions.append(
@@ -57,16 +63,24 @@ class StockMentionDetector:
         return mentions
 
 
-def _matches_company(content: str, company: StockCompany) -> bool:
-    if _contains_code(content, company.ts_code):
+@dataclass(frozen=True)
+class _CompanyMatcher:
+    """预编译后的单只股票匹配器。"""
+
+    company: StockCompany
+    ts_code_pattern: Pattern[str]
+    symbol_pattern: Pattern[str]
+
+
+def _matches_company(content: str, matcher: _CompanyMatcher) -> bool:
+    company = matcher.company
+    if matcher.ts_code_pattern.search(content):
         return True
-    if _contains_code(content, company.symbol):
+    if matcher.symbol_pattern.search(content):
         return True
     return len(company.name) >= 2 and company.name in content
 
 
-def _contains_code(content: str, code: str) -> bool:
-    if not code:
-        return False
+def _code_pattern(code: str) -> Pattern[str]:
     pattern = rf"(?<![A-Za-z0-9]){re.escape(code)}(?![A-Za-z0-9])"
-    return re.search(pattern, content, flags=re.IGNORECASE) is not None
+    return re.compile(pattern, flags=re.IGNORECASE)

@@ -21,13 +21,22 @@ from stock_news.core.scheduler import (
 from stock_news.core.wechat import TimeWindow
 from stock_news.models import AppConfig
 from stock_news.usecases.market_sync import sync_stock_companies
-from stock_news.usecases.strategy_tasks import run_catalyst_excel_task
+from stock_news.usecases.strategy_tasks import (
+    run_catalyst_excel_task,
+    run_evening_top_logic_task,
+)
 from stock_news.usecases.wechat_fetch import fetch_wechat_messages
 
-TaskId = Literal["wechat_fetch", "tushare_sync", "catalyst_stock_excel"]
+TaskId = Literal[
+    "wechat_fetch",
+    "tushare_sync",
+    "catalyst_stock_excel",
+    "evening_top_logic",
+]
 TASK_WECHAT_FETCH: TaskId = "wechat_fetch"
 TASK_TUSHARE_SYNC: TaskId = "tushare_sync"
 TASK_CATALYST_STOCK_EXCEL: TaskId = "catalyst_stock_excel"
+TASK_EVENING_TOP_LOGIC: TaskId = "evening_top_logic"
 
 
 @dataclass(frozen=True)
@@ -62,12 +71,14 @@ class SchedulerActions:
     wechat_fetch: Callable[[AppConfig, datetime], str]
     tushare_sync: Callable[[AppConfig, datetime], str]
     catalyst_stock_excel: Callable[[AppConfig, datetime], str]
+    evening_top_logic: Callable[[AppConfig, datetime], str]
 
 
 DEFAULT_ACTIONS = SchedulerActions(
     wechat_fetch=lambda cfg, now: _run_wechat_fetch(cfg, now),
     tushare_sync=lambda cfg, now: _run_tushare_sync(cfg, now),
     catalyst_stock_excel=lambda cfg, now: _run_catalyst_stock_excel(cfg, now),
+    evening_top_logic=lambda cfg, now: _run_evening_top_logic(cfg, now),
 )
 
 
@@ -119,6 +130,15 @@ def due_task_ids(
         )
     ):
         due.append(TASK_CATALYST_STOCK_EXCEL)
+
+    evening_state = store.get(TASK_EVENING_TOP_LOGIC)
+    evening_config = config.schedule.evening_top_logic
+    if evening_config.enabled and is_daily_due(
+        now=now,
+        at=parse_clock(evening_config.at),
+        last_started_at=evening_state.last_started_at,
+    ):
+        due.append(TASK_EVENING_TOP_LOGIC)
 
     return due
 
@@ -231,6 +251,21 @@ def build_schedule_status(
             due=TASK_CATALYST_STOCK_EXCEL in due,
             state=states.get(TASK_CATALYST_STOCK_EXCEL, ScheduledTaskState()),
         ),
+        _task_view(
+            task_id=TASK_EVENING_TOP_LOGIC,
+            enabled=config.schedule.enabled
+            and config.schedule.evening_top_logic.enabled,
+            trigger=(
+                f"at={config.schedule.evening_top_logic.at} "
+                f"window={config.schedule.evening_top_logic.window_start}-"
+                f"{config.schedule.evening_top_logic.window_end} "
+                f"provider={config.schedule.evening_top_logic.provider} "
+                "targets="
+                f"{','.join(config.schedule.evening_top_logic.channel_targets)}"
+            ),
+            due=TASK_EVENING_TOP_LOGIC in due,
+            state=states.get(TASK_EVENING_TOP_LOGIC, ScheduledTaskState()),
+        ),
     ]
 
 
@@ -246,6 +281,8 @@ def _run_action(
         return actions.tushare_sync(config, now)
     if task_id == TASK_CATALYST_STOCK_EXCEL:
         return actions.catalyst_stock_excel(config, now)
+    if task_id == TASK_EVENING_TOP_LOGIC:
+        return actions.evening_top_logic(config, now)
     raise ValueError(f"未知定时任务: {task_id}")
 
 
@@ -312,11 +349,65 @@ def _run_catalyst_stock_excel(config: AppConfig, now: datetime) -> str:
     )
 
 
+def _run_evening_top_logic(config: AppConfig, now: datetime) -> str:
+    schedule = config.schedule.evening_top_logic
+    window = _same_day_window(
+        now,
+        start=parse_clock(schedule.window_start),
+        end=parse_clock(schedule.window_end),
+    )
+    result = run_evening_top_logic_task(
+        config=config,
+        window=window,
+        sources=config.wechat.sources,
+        now=now,
+        fetch=True,
+        publish=True,
+        send=True,
+        provider=schedule.provider,
+        thinking_enabled=schedule.thinking_enabled,
+        thinking_budget_tokens=schedule.thinking_budget_tokens,
+        top_candidates=schedule.top_candidates,
+        top_final=schedule.top_final,
+        channel_targets=schedule.channel_targets,
+        channel_routes=schedule.channel_routes,
+    )
+    fetch_summary = result.fetch_summary
+    fetch_part = ""
+    if fetch_summary is not None:
+        fetch_part = (
+            f" fetched={fetch_summary.fetched}"
+            f" inserted={fetch_summary.inserted}"
+            f" errors={len(fetch_summary.errors)}"
+        )
+        if fetch_summary.errors:
+            raise RuntimeError(fetch_part.strip())
+    url = result.publish_result.url if result.publish_result is not None else ""
+    return (
+        f"scanned={result.scanned_messages}"
+        f" catalyst={result.catalyst_messages}"
+        f" stock_messages={result.stock_messages}"
+        f" candidates={len(result.candidates)}"
+        f" selected={len(result.selection.items)}"
+        f" sent={len(result.send_results)}"
+        f" url={url}"
+        f" file={result.html_path}"
+        f"{fetch_part}"
+    )
+
+
 def _within_active_window(now: datetime, *, start: time, end: time) -> bool:
     current = now.time().replace(second=0, microsecond=0)
     if start <= end:
         return start <= current <= end
     return current >= start or current <= end
+
+
+def _same_day_window(now: datetime, *, start: time, end: time) -> TimeWindow:
+    return TimeWindow(
+        start=datetime.combine(now.date(), start, tzinfo=now.tzinfo),
+        end=datetime.combine(now.date(), end, tzinfo=now.tzinfo),
+    )
 
 
 def _task_view(

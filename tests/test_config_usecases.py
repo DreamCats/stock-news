@@ -234,6 +234,18 @@ def test_schedule_template_matches_schema() -> None:
         "dreamboys",
         "wecom-push-1",
     ]
+    assert cfg.evening_top_logic.enabled is True
+    assert cfg.evening_top_logic.at == "21:00"
+    assert cfg.evening_top_logic.window_start == "09:00"
+    assert cfg.evening_top_logic.window_end == "21:00"
+    assert cfg.evening_top_logic.provider == "mimo"
+    assert cfg.evening_top_logic.thinking_enabled is True
+    assert cfg.evening_top_logic.top_candidates == 50
+    assert cfg.evening_top_logic.top_final == 32
+    assert cfg.evening_top_logic.channel_targets == [
+        "dreamboys",
+        "wecom-push-2",
+    ]
 
     rendered = render_schedule_template()
     parsed = yaml.safe_load(rendered)

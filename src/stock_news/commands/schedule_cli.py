@@ -29,6 +29,7 @@ from stock_news.usecases.scheduler import (
 )
 from stock_news.usecases.scheduler.service import (
     TASK_CATALYST_STOCK_EXCEL,
+    TASK_EVENING_TOP_LOGIC,
     TASK_TUSHARE_SYNC,
     TASK_WECHAT_FETCH,
     TaskId,
@@ -120,7 +121,16 @@ def restart(ctx: click.Context) -> None:
 @click.argument(
     "task",
     type=click.Choice(
-        ["wechat", "market", "tushare", "catalyst-excel", "strategy", "all"]
+        [
+            "wechat",
+            "market",
+            "tushare",
+            "catalyst-excel",
+            "evening-top",
+            "top-logic",
+            "strategy",
+            "all",
+        ]
     ),
 )
 @click.pass_context
@@ -225,8 +235,15 @@ def _resolve_task_ids(task: str) -> list[TaskId]:
         "market": [TASK_TUSHARE_SYNC],
         "tushare": [TASK_TUSHARE_SYNC],
         "catalyst-excel": [TASK_CATALYST_STOCK_EXCEL],
-        "strategy": [TASK_CATALYST_STOCK_EXCEL],
-        "all": [TASK_WECHAT_FETCH, TASK_TUSHARE_SYNC, TASK_CATALYST_STOCK_EXCEL],
+        "evening-top": [TASK_EVENING_TOP_LOGIC],
+        "top-logic": [TASK_EVENING_TOP_LOGIC],
+        "strategy": [TASK_CATALYST_STOCK_EXCEL, TASK_EVENING_TOP_LOGIC],
+        "all": [
+            TASK_WECHAT_FETCH,
+            TASK_TUSHARE_SYNC,
+            TASK_CATALYST_STOCK_EXCEL,
+            TASK_EVENING_TOP_LOGIC,
+        ],
     }
     return task_map[task]
 

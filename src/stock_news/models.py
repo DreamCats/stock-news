@@ -161,6 +161,39 @@ class ScheduleCatalystStockExcelConfig(BaseModel):
         return self
 
 
+class ScheduleEveningTopLogicConfig(BaseModel):
+    """晚间 Top 投研逻辑定时任务配置。"""
+
+    enabled: bool = True
+    at: str = "21:00"
+    window_start: str = "09:00"
+    window_end: str = "21:00"
+    provider: str = "mimo"
+    thinking_enabled: bool = True
+    thinking_budget_tokens: int | None = None
+    top_candidates: int = 50
+    top_final: int = 32
+    channel_targets: list[str] = Field(
+        default_factory=lambda: ["dreamboys", "wecom-push-2"]
+    )
+    channel_routes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_evening_top_logic(self) -> ScheduleEveningTopLogicConfig:
+        _validate_clock(self.at)
+        _validate_clock(self.window_start)
+        _validate_clock(self.window_end)
+        if self.top_candidates < 1:
+            raise ValueError("top_candidates 必须大于等于 1")
+        if self.top_final < 1:
+            raise ValueError("top_final 必须大于等于 1")
+        if self.top_final > self.top_candidates:
+            raise ValueError("top_final 不能大于 top_candidates")
+        if self.thinking_budget_tokens is not None and self.thinking_budget_tokens < 1:
+            raise ValueError("thinking_budget_tokens 必须大于等于 1")
+        return self
+
+
 class ScheduleConfig(BaseModel):
     """定时任务配置文件。"""
 
@@ -174,6 +207,9 @@ class ScheduleConfig(BaseModel):
     )
     catalyst_stock_excel: ScheduleCatalystStockExcelConfig = Field(
         default_factory=ScheduleCatalystStockExcelConfig
+    )
+    evening_top_logic: ScheduleEveningTopLogicConfig = Field(
+        default_factory=ScheduleEveningTopLogicConfig
     )
 
     @model_validator(mode="after")

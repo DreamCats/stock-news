@@ -80,6 +80,17 @@ def show(json_output: bool) -> None:
             f"{cfg.schedule.catalyst_stock_excel.active_end} "
             f"targets={', '.join(cfg.schedule.catalyst_stock_excel.channel_targets)}"
         )
+        click.echo(
+            "晚间 Top 逻辑定时: "
+            f"{'启用' if cfg.schedule.evening_top_logic.enabled else '停用'} "
+            f"at={cfg.schedule.evening_top_logic.at} "
+            f"window={cfg.schedule.evening_top_logic.window_start}-"
+            f"{cfg.schedule.evening_top_logic.window_end} "
+            f"provider={cfg.schedule.evening_top_logic.provider} "
+            f"top={cfg.schedule.evening_top_logic.top_candidates}->"
+            f"{cfg.schedule.evening_top_logic.top_final} "
+            f"targets={', '.join(cfg.schedule.evening_top_logic.channel_targets)}"
+        )
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
         custom_count = len(
             [

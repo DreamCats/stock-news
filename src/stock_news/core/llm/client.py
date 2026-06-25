@@ -32,6 +32,7 @@ class LLMClient:
         *,
         provider: str | None = None,
         task: str | None = None,
+        provider_overrides: dict[str, object] | None = None,
     ) -> ChatResult:
         """调用模型并返回文本结果。"""
 
@@ -39,8 +40,11 @@ class LLMClient:
         errors: list[str] = []
         for name in names:
             resolved = self.registry.resolve(provider=name)
+            provider_config = resolved.config
+            if provider_overrides:
+                provider_config = provider_config.model_copy(update=provider_overrides)
             try:
-                return _chat_once(name, resolved.config, messages)
+                return _chat_once(name, provider_config, messages)
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
         if errors:
@@ -54,6 +58,7 @@ class LLMClient:
         system: str = "",
         provider: str | None = None,
         task: str | None = None,
+        provider_overrides: dict[str, object] | None = None,
     ) -> ChatResult:
         """用普通 prompt 调用模型。"""
 
@@ -61,7 +66,12 @@ class LLMClient:
         if system:
             messages.append(ChatMessage(role="system", content=system))
         messages.append(ChatMessage(role="user", content=prompt))
-        return self.chat(messages, provider=provider, task=task)
+        return self.chat(
+            messages,
+            provider=provider,
+            task=task,
+            provider_overrides=provider_overrides,
+        )
 
 
 def _chat_once(

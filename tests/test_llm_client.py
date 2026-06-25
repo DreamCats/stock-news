@@ -156,6 +156,41 @@ def test_anthropic_messages_can_enable_thinking(monkeypatch: Any) -> None:
     assert result.content == "with thinking"
 
 
+def test_llm_client_can_override_thinking_for_one_call(monkeypatch: Any) -> None:
+    captured: dict[str, object] = {}
+    provider = LLMProviderConfig(
+        base_url="https://claude.example.com/v1",
+        api_key="claude-key",
+        model="claude-test",
+        api="anthropic-messages",
+        thinking_enabled=False,
+    )
+
+    def fake_urlopen(request: Any, timeout: float) -> FakeResponse:
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"content": [{"type": "text", "text": "with override"}]})
+
+    monkeypatch.setattr("stock_news.core.llm.client.urlopen", fake_urlopen)
+    client = LLMClient(
+        LLMConfig(default_provider="claude", providers={"claude": provider})
+    )
+
+    result = client.chat_text(
+        "hello",
+        provider_overrides={
+            "thinking_enabled": True,
+            "thinking_budget_tokens": 1024,
+        },
+    )
+
+    assert captured["payload"]["thinking"] == {
+        "type": "enabled",
+        "budget_tokens": 1024,
+    }
+    assert provider.thinking_enabled is False
+    assert result.content == "with override"
+
+
 def test_llm_client_falls_back_provider_pool(monkeypatch: Any) -> None:
     calls: list[str] = []
 
