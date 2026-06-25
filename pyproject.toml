@@ -7,10 +7,6 @@ dependencies = [
     "click>=8.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "httpx>=0.27",
-    "openai>=1.30",
-    "tushare>=1.4",
-    "efinance>=0.5",
 ]
 
 [project.optional-dependencies]

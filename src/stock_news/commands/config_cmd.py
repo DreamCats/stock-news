@@ -6,7 +6,9 @@ import json
 
 import click
 
-from stock_news.common.config import load, save, set_nested
+from stock_news.core.config import CONFIG_FILE, load, save, set_nested
+from stock_news.usecases.configs.paths import ConfigPaths
+from stock_news.usecases.configs.service import config_files
 
 
 def _masked(value: object) -> object:
@@ -37,14 +39,88 @@ def show(json_output: bool) -> None:
             )
         )
     else:
-        click.echo(f"API 地址: {cfg.api.base_url}")
-        click.echo(f"数据源: {', '.join(cfg.api.sources)}")
-        click.echo(f"超时: {cfg.api.timeout}s")
-        click.echo(f"数据目录: {cfg.storage.data_dir}")
-        click.echo(f"存储格式: {cfg.storage.format}")
-        click.echo(f"Tushare API: {cfg.market.tushare_api_url or '直连'}")
-        if cfg.delivery.providers:
-            click.echo(f"Delivery providers: {', '.join(cfg.delivery.providers)}")
+        files = config_files(ConfigPaths.from_legacy_file(CONFIG_FILE))
+        click.echo("配置文件:")
+        click.echo(f"  models: {files.model_providers}")
+        click.echo(f"  wechat: {files.wechat_source}")
+        click.echo(f"  tushare: {files.tushare}")
+        click.echo(f"  research_sources: {files.research_sources}")
+        click.echo(f"  aly: {files.aly}")
+        click.echo(f"  schedule: {files.schedule}")
+        click.echo(f"  channel: {files.channel}")
+        click.echo(f"  catalysts: {files.catalysts}")
+        click.echo("")
+        click.echo(f"默认模型: {cfg.models.default_provider or '未配置'}")
+        click.echo(f"模型供应商: {', '.join(cfg.models.providers) or '未配置'}")
+        click.echo(f"微信 API: {cfg.wechat.base_url}")
+        click.echo(f"微信 DB: {cfg.wechat.db_path}")
+        click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
+        click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
+        click.echo(f"Market DB: {cfg.tushare.db_path}")
+        enabled_research_sources = [
+            item.name for item in cfg.research_sources.sources.values() if item.enabled
+        ]
+        click.echo(f"研究源 DB: {cfg.research_sources.db_path}")
+        click.echo(f"研究源: {', '.join(enabled_research_sources) or '未配置'}")
+        click.echo(f"阿里云: {cfg.aly.user}@{cfg.aly.host}:{cfg.aly.port}")
+        click.echo(f"阿里云目录: {cfg.aly.remote_dir or '未配置'}")
+        click.echo(f"阿里云 URL: {cfg.aly.url_prefix or '未配置'}")
+        click.echo(f"定时任务: {'启用' if cfg.schedule.enabled else '停用'}")
+        click.echo(
+            "微信定时: "
+            f"{'启用' if cfg.schedule.wechat_fetch.enabled else '停用'} "
+            f"every={cfg.schedule.wechat_fetch.every} "
+            f"window={cfg.schedule.wechat_fetch.window}"
+        )
+        click.echo(
+            "Tushare 定时: "
+            f"{'启用' if cfg.schedule.tushare_sync.enabled else '停用'} "
+            f"at={cfg.schedule.tushare_sync.at}"
+        )
+        click.echo(
+            "催化 Excel 定时: "
+            f"{'启用' if cfg.schedule.catalyst_stock_excel.enabled else '停用'} "
+            f"every={cfg.schedule.catalyst_stock_excel.every} "
+            f"window={cfg.schedule.catalyst_stock_excel.window} "
+            f"active={cfg.schedule.catalyst_stock_excel.active_start}-"
+            f"{cfg.schedule.catalyst_stock_excel.active_end} "
+            f"targets={', '.join(cfg.schedule.catalyst_stock_excel.channel_targets)}"
+        )
+        click.echo(
+            "晚间 Top 逻辑定时: "
+            f"{'启用' if cfg.schedule.evening_top_logic.enabled else '停用'} "
+            f"at={cfg.schedule.evening_top_logic.at} "
+            f"window={cfg.schedule.evening_top_logic.window_start}-"
+            f"{cfg.schedule.evening_top_logic.window_end} "
+            f"provider={cfg.schedule.evening_top_logic.provider} "
+            f"top={cfg.schedule.evening_top_logic.top_candidates}->"
+            f"{cfg.schedule.evening_top_logic.top_final} "
+            f"targets={', '.join(cfg.schedule.evening_top_logic.channel_targets)}"
+        )
+        click.echo(
+            "公开研究源摘要定时: "
+            f"{'启用' if cfg.schedule.research_daily_brief.enabled else '停用'} "
+            f"at={cfg.schedule.research_daily_brief.at} "
+            f"provider={cfg.schedule.research_daily_brief.provider} "
+            f"lookback={cfg.schedule.research_daily_brief.lookback_hours}h "
+            f"max_pages={cfg.schedule.research_daily_brief.max_pages} "
+            f"max_docs={cfg.schedule.research_daily_brief.max_documents} "
+            f"targets={', '.join(cfg.schedule.research_daily_brief.channel_targets)}"
+        )
+        click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
+        custom_count = len(
+            [
+                category
+                for category in cfg.catalysts.custom_categories
+                if category.enabled
+            ]
+        )
+        click.echo(
+            "催化词: "
+            f"内置={'启用' if cfg.catalysts.builtin_enabled else '停用'} "
+            f"覆盖分类={len(cfg.catalysts.categories)} "
+            f"自定义分类={custom_count}"
+        )
 
 
 def set_value(key: str, value: str) -> None:
