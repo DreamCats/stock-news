@@ -53,6 +53,7 @@ def show(json_output: bool) -> None:
         click.echo(f"微信 DB: {cfg.wechat.db_path}")
         click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
         click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
+        click.echo(f"Market DB: {cfg.tushare.db_path}")
         click.echo(f"定时任务数: {len(cfg.schedule.jobs)}")
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
 

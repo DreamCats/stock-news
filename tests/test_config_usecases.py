@@ -141,6 +141,7 @@ def test_tushare_template_matches_schema() -> None:
 
     assert cfg.tushare_api_url == "https://<tushare-proxy-base-url>"
     assert cfg.token == ""
+    assert cfg.db_path == "~/.config/stock-news/market.db"
     assert cfg.timeout == 30
 
     rendered = render_tushare_template()

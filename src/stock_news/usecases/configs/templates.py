@@ -77,6 +77,7 @@ def default_tushare_config() -> TushareConfigFile:
     return TushareConfigFile(
         tushare_api_url="https://<tushare-proxy-base-url>",
         token="",
+        db_path="~/.config/stock-news/market.db",
         timeout=30,
     )
 

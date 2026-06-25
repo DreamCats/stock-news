@@ -95,6 +95,7 @@ class TushareConfig(BaseModel):
 
     tushare_api_url: str = ""
     token: str = ""
+    db_path: str = "~/.config/stock-news/market.db"
     timeout: int = 30
 
 

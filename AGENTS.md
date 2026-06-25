@@ -20,6 +20,9 @@ src/stock_news/
 ├── common/config.py           # 运行时配置加载/保存兼容入口
 ├── core/concurrency/          # 通用固定 worker 任务池
 ├── core/config/store.py       # YAML 配置读写与点号路径修改
+├── core/db/                   # 通用 SQLite 连接工具
+├── core/market/               # 股票公司和代码的 market.db 存储
+├── core/tushare/              # Tushare 代理协议客户端
 ├── core/wechat/               # 微信原始消息模型和 SQLite 增量存储
 └── usecases/configs/          # 分文件配置加载、保存、模板
 ```
@@ -33,7 +36,7 @@ config.yaml              # 旧单文件配置，只作为读取兼容来源
 schedule.yaml            # 定时任务配置
 configs/models.yaml      # 模型供应商
 configs/wechat.yaml      # 微信数据源 API / 鉴权 / 拉取参数 / SQLite 路径
-configs/tushare.yaml     # Tushare 代理配置
+configs/tushare.yaml     # Tushare 代理 / token / market.db 配置
 configs/channel.yaml     # 飞书 / 企业微信渠道配置
 ```
 
@@ -73,6 +76,13 @@ rtk .venv/bin/sn config set channel.providers.<name>.webhook_url <secret>
 - 成功且超过 `safety_margin_minutes` 的窗口跳过；失败窗口和最近窗口允许重拉。
 - 切片默认按 `slice_hours=1` 小时拆分，最后一片可以短于 1 小时。
 - 切片并发执行使用 `core/concurrency` 固定 worker 池，任意切片完成后立刻补入下一个待执行切片。
+
+## Tushare 和 market.db
+
+- Tushare 代理不保存 token；每次请求都从本地 `tushare.token` 传给代理。
+- 默认 DB 路径：`~/.config/stock-news/market.db`。
+- 当前只保存股票公司和代码映射：`stock_companies`。
+- 不保存历史行情，不提供 daily/price/trade_cal 命令。
 
 ## 开发规则
 
