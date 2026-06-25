@@ -82,6 +82,9 @@ Tushare 代理不会保存 token；`sn tushare sync-stocks` 会把本地
 底层支持 OpenAI chat completions 协议和 Anthropic messages 协议，并按
 `models.yaml` 的 `default_provider`、`task_routing`、`provider_pools` 选择 provider。
 
+`core/channels` 提供后续 usecase 可复用的渠道发送能力：统一 `ChannelSender`
+入口，底层支持飞书应用和企业微信群机器人，消息模型支持文本、富文本和文件。
+
 项目内定时任务不依赖系统 cron。日常用 `sn schedule start` 后台启动；
 `sn schedule serve` 保留为前台调试入口。后台进程仍然只是项目自己的
 `schedule serve` 进程：

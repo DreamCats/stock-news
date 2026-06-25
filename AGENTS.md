@@ -21,6 +21,7 @@ src/stock_news/
 ├── commands/tushare_cli.py    # Tushare/market 命令
 ├── commands/schedule_cli.py   # 项目进程内定时任务命令
 ├── core/concurrency/          # 通用固定 worker 任务池
+├── core/channels/             # 飞书 / 企业微信统一发送能力
 ├── core/config/               # YAML 配置读写、运行时加载/保存与点号路径修改
 ├── core/db/                   # 通用 SQLite 连接工具
 ├── core/llm/                  # OpenAI / Anthropic 协议客户端和 provider 选择
