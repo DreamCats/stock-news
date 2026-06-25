@@ -45,6 +45,7 @@ schedule.log             # 后台定时进程日志
 configs/models.yaml      # 模型供应商
 configs/wechat.yaml      # 微信数据源 API / 鉴权 / 拉取参数 / SQLite 路径
 configs/tushare.yaml     # Tushare 代理 / token / market.db 配置
+configs/aly.yaml         # 阿里云主机 / 远端目录 / URL 前缀
 configs/schedule.yaml    # 项目内定时任务配置
 configs/channel.yaml     # 飞书 / 企业微信渠道配置
 ```
@@ -76,6 +77,7 @@ rtk .venv/bin/sn schedule status
 ```bash
 rtk .venv/bin/sn config set models.providers.<name>.api_key <secret>
 rtk .venv/bin/sn config set channel.providers.<name>.webhook_url <secret>
+rtk .venv/bin/sn config set aly.password <secret>
 rtk .venv/bin/sn wechat fetch --last 30m      # 真实访问微信 API 并写 wechat.db
 rtk .venv/bin/sn tushare sync-stocks          # 真实访问 Tushare 代理并写 market.db
 rtk .venv/bin/sn schedule run wechat|market   # 手动触发真实任务

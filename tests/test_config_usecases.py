@@ -15,11 +15,13 @@ from stock_news.models import (
 from stock_news.usecases.configs.paths import ConfigPaths
 from stock_news.usecases.configs.service import load_app_config, save_app_config
 from stock_news.usecases.configs.templates import (
+    default_aly_config,
     default_channel_config,
     default_model_providers_config,
     default_schedule_config,
     default_tushare_config,
     default_wechat_source_config,
+    render_aly_template,
     render_channel_template,
     render_model_providers_template,
     render_schedule_template,
@@ -40,6 +42,9 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     )
     cfg.wechat.base_url = "https://wechat.example.com/api"
     cfg.tushare.tushare_api_url = "https://tushare-proxy.example.com"
+    cfg.aly.host = "39.106.190.32"
+    cfg.aly.password = "aly-secret"
+    cfg.aly.remote_dir = "/usr/share/caddy/stock-news"
     cfg.schedule.wechat_fetch.every = "15m"
     cfg.schedule.wechat_fetch.window = "15m"
     cfg.channel.providers["feishu-main"] = DeliveryProviderConfig(
@@ -53,6 +58,7 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert paths.model_providers_file.exists()
     assert paths.wechat_source_file.exists()
     assert paths.tushare_file.exists()
+    assert paths.aly_file.exists()
     assert paths.schedule_file.exists()
     assert paths.channel_file.exists()
     assert not paths.legacy_file.exists()
@@ -61,6 +67,9 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert loaded.models.providers["glm"].api_key == "model-secret"
     assert loaded.wechat.base_url == "https://wechat.example.com/api"
     assert loaded.tushare.tushare_api_url == "https://tushare-proxy.example.com"
+    assert loaded.aly.host == "39.106.190.32"
+    assert loaded.aly.password == "aly-secret"
+    assert loaded.aly.remote_dir == "/usr/share/caddy/stock-news"
     assert loaded.schedule.wechat_fetch.every == "15m"
     assert loaded.schedule.wechat_fetch.window == "15m"
     assert loaded.channel.providers["feishu-main"].app_secret == "feishu-secret"
@@ -87,6 +96,29 @@ def test_split_config_overrides_legacy_sections(tmp_path: Path) -> None:
 
     assert loaded.wechat.base_url == "https://new-wechat.example.com"
     assert loaded.tushare.tushare_api_url == "https://old-tushare.example.com"
+
+
+def test_legacy_publish_nightly_maps_to_aly_config(tmp_path: Path) -> None:
+    paths = ConfigPaths.from_legacy_file(tmp_path / "config.yaml")
+    paths.legacy_file.write_text(
+        "publish:\n"
+        "  nightly:\n"
+        "    host: 39.106.190.32\n"
+        "    user: root\n"
+        "    password: old-secret\n"
+        "    port: 22\n"
+        "    remote_dir: /usr/share/caddy/stock-news\n"
+        "    url_prefix: http://39.106.190.32/stock-news\n"
+        "    sshpass_path: sshpass\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_app_config(paths)
+
+    assert loaded.aly.host == "39.106.190.32"
+    assert loaded.aly.password == "old-secret"
+    assert loaded.aly.remote_dir == "/usr/share/caddy/stock-news"
+    assert loaded.aly.url_prefix == "http://39.106.190.32/stock-news"
 
 
 def test_set_nested_accepts_legacy_root_alias() -> None:
@@ -144,6 +176,23 @@ def test_tushare_template_matches_schema() -> None:
     assert cfg.timeout == 30
 
     rendered = render_tushare_template()
+    parsed = yaml.safe_load(rendered)
+    loaded = type(cfg).model_validate(parsed)
+    assert loaded == cfg
+
+
+def test_aly_template_matches_schema() -> None:
+    cfg = default_aly_config()
+
+    assert cfg.host == "<aliyun-host>"
+    assert cfg.user == "root"
+    assert cfg.password == ""
+    assert cfg.port == 22
+    assert cfg.remote_dir == "/usr/share/caddy/stock-news"
+    assert cfg.url_prefix == "http://<aliyun-host>/stock-news"
+    assert cfg.sshpass_path == "sshpass"
+
+    rendered = render_aly_template()
     parsed = yaml.safe_load(rendered)
     loaded = type(cfg).model_validate(parsed)
     assert loaded == cfg

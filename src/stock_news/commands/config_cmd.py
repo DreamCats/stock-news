@@ -44,6 +44,7 @@ def show(json_output: bool) -> None:
         click.echo(f"  models: {files.model_providers}")
         click.echo(f"  wechat: {files.wechat_source}")
         click.echo(f"  tushare: {files.tushare}")
+        click.echo(f"  aly: {files.aly}")
         click.echo(f"  schedule: {files.schedule}")
         click.echo(f"  channel: {files.channel}")
         click.echo("")
@@ -54,6 +55,9 @@ def show(json_output: bool) -> None:
         click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
         click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
         click.echo(f"Market DB: {cfg.tushare.db_path}")
+        click.echo(f"阿里云: {cfg.aly.user}@{cfg.aly.host}:{cfg.aly.port}")
+        click.echo(f"阿里云目录: {cfg.aly.remote_dir or '未配置'}")
+        click.echo(f"阿里云 URL: {cfg.aly.url_prefix or '未配置'}")
         click.echo(f"定时任务: {'启用' if cfg.schedule.enabled else '停用'}")
         click.echo(
             "微信定时: "

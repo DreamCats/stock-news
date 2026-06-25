@@ -99,6 +99,18 @@ class TushareConfig(BaseModel):
     timeout: int = 30
 
 
+class AlyConfig(BaseModel):
+    """阿里云文件生成和发布配置。"""
+
+    host: str = ""
+    user: str = "root"
+    password: str = ""
+    port: int = 22
+    remote_dir: str = ""
+    url_prefix: str = ""
+    sshpass_path: str = "sshpass"
+
+
 class ScheduleWechatFetchConfig(BaseModel):
     """微信数据源定时拉取配置。"""
 
@@ -209,6 +221,7 @@ class AppConfig(BaseModel):
     models: LLMConfig = Field(default_factory=LLMConfig)
     wechat: WechatSourceConfig = Field(default_factory=WechatSourceConfig)
     tushare: TushareConfig = Field(default_factory=TushareConfig)
+    aly: AlyConfig = Field(default_factory=AlyConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
 
@@ -227,6 +240,11 @@ class AppConfig(BaseModel):
         for old_key, new_key in aliases.items():
             if old_key in migrated and new_key not in migrated:
                 migrated[new_key] = migrated[old_key]
+        publish = migrated.get("publish")
+        if isinstance(publish, dict) and "aly" not in migrated:
+            nightly = publish.get("nightly")
+            if isinstance(nightly, dict):
+                migrated["aly"] = nightly
         return migrated
 
 

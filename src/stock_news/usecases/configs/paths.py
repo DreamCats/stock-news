@@ -38,6 +38,10 @@ class ConfigPaths:
         return self.split_dir / "tushare.yaml"
 
     @property
+    def aly_file(self) -> Path:
+        return self.split_dir / "aly.yaml"
+
+    @property
     def channel_file(self) -> Path:
         return self.split_dir / "channel.yaml"
 

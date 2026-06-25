@@ -15,6 +15,7 @@ import yaml
 from stock_news.core.config.store import YAMLConfigStore
 from stock_news.models import AppConfig
 from stock_news.usecases.configs.models import (
+    AlyConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
     ScheduleConfigFile,
@@ -31,6 +32,7 @@ class SplitConfigFiles:
     model_providers: Path
     wechat_source: Path
     tushare: Path
+    aly: Path
     schedule: Path
     channel: Path
 
@@ -42,6 +44,7 @@ def config_files(paths: ConfigPaths) -> SplitConfigFiles:
         model_providers=paths.model_providers_file,
         wechat_source=paths.wechat_source_file,
         tushare=paths.tushare_file,
+        aly=paths.aly_file,
         schedule=paths.schedule_file,
         channel=paths.channel_file,
     )
@@ -64,6 +67,8 @@ def load_app_config(paths: ConfigPaths) -> AppConfig:
         cfg.tushare = _store(paths.tushare_file, TushareConfigFile).load(
             TushareConfigFile
         )
+    if paths.aly_file.exists():
+        cfg.aly = _store(paths.aly_file, AlyConfigFile).load(AlyConfigFile)
     if paths.schedule_file.exists():
         cfg.schedule = _store(paths.schedule_file, ScheduleConfigFile).load(
             ScheduleConfigFile
@@ -89,6 +94,10 @@ def save_app_config(paths: ConfigPaths, cfg: AppConfig) -> None:
     )
     _store(paths.tushare_file, TushareConfigFile).save(
         TushareConfigFile.model_validate(cfg.tushare.model_dump(mode="json")),
+        mode=0o600,
+    )
+    _store(paths.aly_file, AlyConfigFile).save(
+        AlyConfigFile.model_validate(cfg.aly.model_dump(mode="json")),
         mode=0o600,
     )
     _store(paths.schedule_file, ScheduleConfigFile).save(

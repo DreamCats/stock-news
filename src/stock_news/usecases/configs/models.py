@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from stock_news.models import (
+    AlyConfig,
     ChannelConfig,
     LLMConfig,
     ScheduleConfig,
@@ -25,6 +26,10 @@ class WechatSourceConfigFile(WechatSourceConfig):
 
 class TushareConfigFile(TushareConfig):
     """tushare.yaml：Tushare 代理 API 和访问参数。"""
+
+
+class AlyConfigFile(AlyConfig):
+    """aly.yaml：阿里云文件生成和发布配置。"""
 
 
 class ScheduleConfigFile(ScheduleConfig):

@@ -59,6 +59,7 @@ sn config set delivery.routes.default.format markdown
     ├── models.yaml          # 模型供应商：glm/kimi/mimo/minimax
     ├── wechat.yaml          # 微信数据源 API、鉴权、拉取参数、SQLite 路径
     ├── tushare.yaml         # Tushare 代理配置、本地 token、market.db 路径
+    ├── aly.yaml             # 阿里云主机、远端目录和 URL 前缀
     ├── schedule.yaml        # 项目内定时任务配置
     └── channel.yaml         # 飞书 bot / 企业微信渠道配置
 ```

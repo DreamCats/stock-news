@@ -9,6 +9,7 @@ import yaml
 
 from stock_news.models import LLMProviderConfig
 from stock_news.usecases.configs.models import (
+    AlyConfigFile,
     ChannelConfigFile,
     ModelProvidersConfigFile,
     ScheduleConfigFile,
@@ -86,6 +87,27 @@ def render_tushare_template() -> str:
     """把 Tushare 模板渲染成 tushare.yaml 内容。"""
 
     data = default_tushare_config().model_dump(mode="json")
+    return _dump_yaml(data)
+
+
+def default_aly_config() -> AlyConfigFile:
+    """生成阿里云配置模板。"""
+
+    return AlyConfigFile(
+        host="<aliyun-host>",
+        user="root",
+        password="",
+        port=22,
+        remote_dir="/usr/share/caddy/stock-news",
+        url_prefix="http://<aliyun-host>/stock-news",
+        sshpass_path="sshpass",
+    )
+
+
+def render_aly_template() -> str:
+    """把阿里云模板渲染成 aly.yaml 内容。"""
+
+    data = default_aly_config().model_dump(mode="json")
     return _dump_yaml(data)
 
 
