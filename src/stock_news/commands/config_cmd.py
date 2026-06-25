@@ -6,7 +6,7 @@ import json
 
 import click
 
-from stock_news.common.config import CONFIG_FILE, load, save, set_nested
+from stock_news.core.config import CONFIG_FILE, load, save, set_nested
 from stock_news.usecases.configs.paths import ConfigPaths
 from stock_news.usecases.configs.service import config_files
 
@@ -54,7 +54,18 @@ def show(json_output: bool) -> None:
         click.echo(f"微信数据源: {', '.join(cfg.wechat.sources)}")
         click.echo(f"Tushare API: {cfg.tushare.tushare_api_url or '未配置'}")
         click.echo(f"Market DB: {cfg.tushare.db_path}")
-        click.echo(f"定时任务数: {len(cfg.schedule.jobs)}")
+        click.echo(f"定时任务: {'启用' if cfg.schedule.enabled else '停用'}")
+        click.echo(
+            "微信定时: "
+            f"{'启用' if cfg.schedule.wechat_fetch.enabled else '停用'} "
+            f"every={cfg.schedule.wechat_fetch.every} "
+            f"window={cfg.schedule.wechat_fetch.window}"
+        )
+        click.echo(
+            "Tushare 定时: "
+            f"{'启用' if cfg.schedule.tushare_sync.enabled else '停用'} "
+            f"at={cfg.schedule.tushare_sync.at}"
+        )
         click.echo(f"渠道 providers: {', '.join(cfg.channel.providers) or '未配置'}")
 
 

@@ -1,10 +1,13 @@
-"""YAML 配置读写."""
+"""运行时配置入口。
+
+这里负责把默认配置路径、分文件配置加载和点号路径修改收敛到 core/config。
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from stock_news.core.config import set_nested_value
+from stock_news.core.config.store import set_nested_value
 from stock_news.models import AppConfig
 from stock_news.usecases.configs.paths import ConfigPaths
 from stock_news.usecases.configs.service import load_app_config, save_app_config
@@ -20,15 +23,19 @@ _ROOT_ALIASES = {
 
 
 def load() -> AppConfig:
+    """加载运行时应用配置。"""
+
     return load_app_config(ConfigPaths.from_legacy_file(CONFIG_FILE))
 
 
 def save(cfg: AppConfig) -> None:
+    """保存运行时应用配置。"""
+
     save_app_config(ConfigPaths.from_legacy_file(CONFIG_FILE), cfg)
 
 
 def set_nested(cfg: AppConfig, key: str, value: str) -> AppConfig:
-    """通过点号路径设置配置项，如 wechat.timeout -> cfg.wechat.timeout."""
+    """通过点号路径设置配置项，如 wechat.timeout -> cfg.wechat.timeout。"""
 
     key = _normalize_key(key)
     data = cfg.model_dump(mode="json")

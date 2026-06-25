@@ -1,7 +1,7 @@
 """配置文件路径规划。
 
-配置按业务域拆分：大多数文件放在 configs/ 目录，
-schedule.yaml 仍放在配置根目录，便于后续定时入口直接读取。
+配置按业务域拆分：业务配置文件统一放在 configs/ 目录，
+调度状态文件仍放在配置根目录。
 """
 
 from __future__ import annotations
@@ -43,4 +43,16 @@ class ConfigPaths:
 
     @property
     def schedule_file(self) -> Path:
-        return self.root_dir / "schedule.yaml"
+        return self.split_dir / "schedule.yaml"
+
+    @property
+    def schedule_state_file(self) -> Path:
+        return self.root_dir / "schedule_state.json"
+
+    @property
+    def schedule_pid_file(self) -> Path:
+        return self.root_dir / "schedule.pid"
+
+    @property
+    def schedule_log_file(self) -> Path:
+        return self.root_dir / "schedule.log"

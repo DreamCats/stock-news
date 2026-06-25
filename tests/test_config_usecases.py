@@ -6,12 +6,11 @@ from pathlib import Path
 
 import yaml
 
-from stock_news.common.config import set_nested
+from stock_news.core.config import set_nested
 from stock_news.models import (
     AppConfig,
     DeliveryProviderConfig,
     LLMProviderConfig,
-    ScheduleJobConfig,
 )
 from stock_news.usecases.configs.paths import ConfigPaths
 from stock_news.usecases.configs.service import load_app_config, save_app_config
@@ -41,9 +40,8 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     )
     cfg.wechat.base_url = "https://wechat.example.com/api"
     cfg.tushare.tushare_api_url = "https://tushare-proxy.example.com"
-    cfg.schedule.jobs.append(
-        ScheduleJobConfig(id="wechat-fetch", command="sn fetch-wechat", every="5m")
-    )
+    cfg.schedule.wechat_fetch.every = "15m"
+    cfg.schedule.wechat_fetch.window = "15m"
     cfg.channel.providers["feishu-main"] = DeliveryProviderConfig(
         type="feishu_bot",
         app_id="cli_xxx",
@@ -63,7 +61,8 @@ def test_split_config_save_writes_owned_files(tmp_path: Path) -> None:
     assert loaded.models.providers["glm"].api_key == "model-secret"
     assert loaded.wechat.base_url == "https://wechat.example.com/api"
     assert loaded.tushare.tushare_api_url == "https://tushare-proxy.example.com"
-    assert loaded.schedule.jobs[0].id == "wechat-fetch"
+    assert loaded.schedule.wechat_fetch.every == "15m"
+    assert loaded.schedule.wechat_fetch.window == "15m"
     assert loaded.channel.providers["feishu-main"].app_secret == "feishu-secret"
 
 
@@ -153,8 +152,13 @@ def test_tushare_template_matches_schema() -> None:
 def test_schedule_template_matches_schema() -> None:
     cfg = default_schedule_config()
 
-    assert cfg.tick_interval == "5m"
-    assert cfg.jobs == []
+    assert cfg.enabled is True
+    assert cfg.tick_interval == "30s"
+    assert cfg.wechat_fetch.enabled is True
+    assert cfg.wechat_fetch.every == "30m"
+    assert cfg.wechat_fetch.window == "30m"
+    assert cfg.tushare_sync.enabled is True
+    assert cfg.tushare_sync.at == "08:30"
 
     rendered = render_schedule_template()
     parsed = yaml.safe_load(rendered)

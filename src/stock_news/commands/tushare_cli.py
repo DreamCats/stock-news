@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import click
 
-from stock_news.common.config import load
+from stock_news.core.config import load
 from stock_news.usecases.market_sync import (
     market_info,
     search_stock_companies,

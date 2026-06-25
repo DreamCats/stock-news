@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 import click
 
-from stock_news.common.config import load
+from stock_news.core.config import load
 from stock_news.core.wechat import TimeWindow
 from stock_news.usecases.wechat_fetch import fetch_wechat_messages
 

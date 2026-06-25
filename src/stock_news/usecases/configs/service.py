@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from stock_news.core.config import YAMLConfigStore
+from stock_news.core.config.store import YAMLConfigStore
 from stock_news.models import AppConfig
 from stock_news.usecases.configs.models import (
     ChannelConfigFile,

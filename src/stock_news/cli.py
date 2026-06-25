@@ -9,6 +9,7 @@ import click
 
 from stock_news import __version__
 from stock_news.commands.config_cli import config
+from stock_news.commands.schedule_cli import schedule
 from stock_news.commands.tushare_cli import tushare
 from stock_news.commands.wechat_cli import wechat
 
@@ -35,6 +36,15 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
       sn tushare sync-stocks                 # 同步股票公司和代码
 
     \b
+    定时任务：
+      sn schedule start                      # 后台启动项目内定时循环
+      sn schedule restart                    # 重启后台定时进程
+      sn schedule stop                       # 停止后台定时进程
+      sn schedule status                     # 查看进程和任务状态
+      sn schedule serve                      # 前台运行，方便调试
+      sn schedule run wechat                 # 手动跑一次微信拉取
+
+    \b
     JSON 输出（Agent 友好）：
       sn --json config show
     """
@@ -45,6 +55,7 @@ def main(ctx: click.Context, json_output: bool, verbose: bool) -> None:
 
 def _register_commands() -> None:
     main.add_command(config)
+    main.add_command(schedule)
     main.add_command(tushare)
     main.add_command(wechat)
 

@@ -90,9 +90,9 @@ def render_tushare_template() -> str:
 
 
 def default_schedule_config() -> ScheduleConfigFile:
-    """生成定时任务配置模板，默认不预置会执行的任务。"""
+    """生成项目内固定定时任务配置模板。"""
 
-    return ScheduleConfigFile(tick_interval="5m", jobs=[])
+    return ScheduleConfigFile()
 
 
 def render_schedule_template() -> str:

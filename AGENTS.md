@@ -4,27 +4,33 @@ This guide is for coding agents working in `/Users/bytedance/Work/tools/cli/stoc
 
 ## 当前项目形态
 
-- 当前分支处于重构早期，保留配置能力和微信 SQLite 增量存储底座。
-- CLI 入口只注册 `sn config`。
-- 旧的微信拉取命令、LLM 执行、行情、本地历史数据、策略、source-radar、workflow、delivery 执行和 scheduler 执行层都已移除。
+- 当前分支处于重构早期，保留配置、微信 SQLite 增量存储、Tushare 股票基础信息和项目进程内定时任务底座。
+- CLI 入口注册 `sn config`、`sn wechat`、`sn tushare`、`sn schedule`。
+- 旧的 LLM 执行、历史数据文件、策略、source-radar、workflow 和 delivery 执行层都已移除。
 - 后续业务入口会从 `usecases/` 重新设计后再接回 CLI。
 
 ## 目录
 
 ```text
 src/stock_news/
-├── cli.py                    # CLI 总入口，只接 config
+├── cli.py                    # CLI 总入口
 ├── models.py                 # 配置数据模型
 ├── commands/config_cli.py     # config 命令 click 接线
 ├── commands/config_cmd.py     # config 命令实现
-├── common/config.py           # 运行时配置加载/保存兼容入口
+├── commands/wechat_cli.py     # 微信拉取命令
+├── commands/tushare_cli.py    # Tushare/market 命令
+├── commands/schedule_cli.py   # 项目进程内定时任务命令
 ├── core/concurrency/          # 通用固定 worker 任务池
-├── core/config/store.py       # YAML 配置读写与点号路径修改
+├── core/config/               # YAML 配置读写、运行时加载/保存与点号路径修改
 ├── core/db/                   # 通用 SQLite 连接工具
 ├── core/market/               # 股票公司和代码的 market.db 存储
+├── core/scheduler/            # 定时判断和状态 JSON 存储
 ├── core/tushare/              # Tushare 代理协议客户端
 ├── core/wechat/               # 微信原始消息模型和 SQLite 增量存储
-└── usecases/configs/          # 分文件配置加载、保存、模板
+├── usecases/configs/          # 分文件配置加载、保存、模板
+├── usecases/market_sync/      # Tushare 同步用例
+├── usecases/scheduler/        # 固定定时任务执行用例
+└── usecases/wechat_fetch/     # 微信拉取用例
 ```
 
 ## 配置文件
@@ -33,10 +39,13 @@ src/stock_news/
 
 ```text
 config.yaml              # 旧单文件配置，只作为读取兼容来源
-schedule.yaml            # 定时任务配置
+schedule_state.json      # 定时任务最近运行状态
+schedule.pid             # 后台定时进程 pid
+schedule.log             # 后台定时进程日志
 configs/models.yaml      # 模型供应商
 configs/wechat.yaml      # 微信数据源 API / 鉴权 / 拉取参数 / SQLite 路径
 configs/tushare.yaml     # Tushare 代理 / token / market.db 配置
+configs/schedule.yaml    # 项目内定时任务配置
 configs/channel.yaml     # 飞书 / 企业微信渠道配置
 ```
 
@@ -57,6 +66,9 @@ delivery -> channel
 rtk .venv/bin/sn --version
 rtk .venv/bin/sn config show
 rtk .venv/bin/sn --json config show
+rtk .venv/bin/sn tushare info
+rtk .venv/bin/sn tushare search 平安
+rtk .venv/bin/sn schedule status
 ```
 
 谨慎命令：
@@ -64,6 +76,13 @@ rtk .venv/bin/sn --json config show
 ```bash
 rtk .venv/bin/sn config set models.providers.<name>.api_key <secret>
 rtk .venv/bin/sn config set channel.providers.<name>.webhook_url <secret>
+rtk .venv/bin/sn wechat fetch --last 30m      # 真实访问微信 API 并写 wechat.db
+rtk .venv/bin/sn tushare sync-stocks          # 真实访问 Tushare 代理并写 market.db
+rtk .venv/bin/sn schedule run wechat|market   # 手动触发真实任务
+rtk .venv/bin/sn schedule start               # 后台常驻，会按配置触发真实任务
+rtk .venv/bin/sn schedule restart             # 重启后台常驻进程
+rtk .venv/bin/sn schedule stop                # 停止后台常驻进程
+rtk .venv/bin/sn schedule serve               # 前台常驻，主要用于调试
 ```
 
 不要在回答里打印 api key、token、webhook、app_secret。
@@ -82,7 +101,17 @@ rtk .venv/bin/sn config set channel.providers.<name>.webhook_url <secret>
 - Tushare 代理不保存 token；每次请求都从本地 `tushare.token` 传给代理。
 - 默认 DB 路径：`~/.config/stock-news/market.db`。
 - 当前只保存股票公司和代码映射：`stock_companies`。
+- 股票状态同步 `L/D/P`，用 `list_status` 区分上市、退市、暂停上市。
 - 不保存历史行情，不提供 daily/price/trade_cal 命令。
+
+## 项目内定时任务
+
+- 定时任务不是系统级 cron；日常用 `sn schedule start` 后台启动项目自己的 `schedule serve` 进程。
+- 固定任务：`wechat_fetch` 和 `tushare_sync`，不要恢复通用 `jobs[].command` workflow。
+- 默认 `wechat_fetch` 每 30 分钟拉最近 30 分钟；默认 `tushare_sync` 每天 08:30 跑一次。
+- 状态写入 `~/.config/stock-news/schedule_state.json`，只记录最近一次执行状态。
+- 后台进程文件是 `~/.config/stock-news/schedule.pid`，日志是 `~/.config/stock-news/schedule.log`。
+- 进程重启后按当前时间继续判断，不补跑所有错过窗口。
 
 ## 开发规则
 

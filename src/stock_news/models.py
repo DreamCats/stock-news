@@ -99,47 +99,47 @@ class TushareConfig(BaseModel):
     timeout: int = 30
 
 
-class ScheduleJobConfig(BaseModel):
-    """单个定时任务的配置，不包含执行状态。"""
+class ScheduleWechatFetchConfig(BaseModel):
+    """微信数据源定时拉取配置。"""
 
-    id: str
-    command: str
-    every: str | None = None
-    at: str | None = None
-    weekdays: str | None = None
-    active_hours: str | None = None
-    timeout: str | None = None
     enabled: bool = True
+    every: str = "30m"
+    window: str = "30m"
 
     @model_validator(mode="after")
-    def _validate_schedule(self) -> ScheduleJobConfig:
-        if bool(self.every) == bool(self.at):
-            raise ValueError("job 必须且只能配置 every 或 at")
-        if self.every:
-            _validate_duration(self.every)
-        if self.at:
-            _validate_clock(self.at)
-        if self.timeout:
-            _validate_duration(self.timeout)
-        if self.active_hours:
-            _validate_active_hours(self.active_hours)
+    def _validate_wechat_fetch(self) -> ScheduleWechatFetchConfig:
+        _validate_duration(self.every)
+        _validate_duration(self.window)
+        return self
+
+
+class ScheduleTushareSyncConfig(BaseModel):
+    """Tushare 股票基础信息定时同步配置。"""
+
+    enabled: bool = True
+    at: str = "08:30"
+
+    @model_validator(mode="after")
+    def _validate_tushare_sync(self) -> ScheduleTushareSyncConfig:
+        _validate_clock(self.at)
         return self
 
 
 class ScheduleConfig(BaseModel):
     """定时任务配置文件。"""
 
-    tick_interval: str = "5m"
-    jobs: list[ScheduleJobConfig] = Field(default_factory=list)
+    enabled: bool = True
+    tick_interval: str = "30s"
+    wechat_fetch: ScheduleWechatFetchConfig = Field(
+        default_factory=ScheduleWechatFetchConfig
+    )
+    tushare_sync: ScheduleTushareSyncConfig = Field(
+        default_factory=ScheduleTushareSyncConfig
+    )
 
     @model_validator(mode="after")
     def _validate_schedule_file(self) -> ScheduleConfig:
         _validate_duration(self.tick_interval)
-        seen: set[str] = set()
-        for job in self.jobs:
-            if job.id in seen:
-                raise ValueError(f"重复的 schedule job id: {job.id}")
-            seen.add(job.id)
         return self
 
 
@@ -239,11 +239,3 @@ def _validate_clock(value: str) -> None:
     if not _CLOCK_RE.match(value.strip()):
         raise ValueError(f"非法时间格式，期望 HH:MM: {value}")
     datetime.strptime(value, "%H:%M")
-
-
-def _validate_active_hours(value: str) -> None:
-    parts = value.split("-", 1)
-    if len(parts) != 2:
-        raise ValueError(f"非法 active_hours，期望 HH:MM-HH:MM: {value}")
-    _validate_clock(parts[0])
-    _validate_clock(parts[1])
